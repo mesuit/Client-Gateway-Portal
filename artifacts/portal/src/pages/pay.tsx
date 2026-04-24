@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute } from "wouter";
 import { Smartphone, Send, RefreshCw, CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react";
 
@@ -23,6 +23,15 @@ interface StatusResult {
   amount: string;
   phoneNumber: string;
   mpesaReceiptNumber: string | null;
+  updatedAt: string;
+}
+
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("254")) return digits;
+  if (digits.startsWith("0") && digits.length >= 9) return "254" + digits.slice(1);
+  if (digits.startsWith("7") || digits.startsWith("1")) return "254" + digits;
+  return digits;
 }
 
 export default function Pay() {
@@ -38,9 +47,11 @@ export default function Pay() {
   const [pushResult, setPushResult] = useState<PushResult | null>(null);
   const [pushError, setPushError] = useState("");
 
-  const [checking, setChecking] = useState(false);
   const [statusResult, setStatusResult] = useState<StatusResult | null>(null);
   const [statusError, setStatusError] = useState("");
+  const [pollCount, setPollCount] = useState(0);
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -53,13 +64,47 @@ export default function Pay() {
       .catch(e => setLinkError(e.message));
   }, [slug]);
 
+  // Auto-poll status every 3s after STK push is sent
+  useEffect(() => {
+    if (!pushResult) return;
+
+    // Start polling immediately
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/pay/status/${pushResult.checkoutRequestId}`);
+        const data = await res.json();
+        if (!res.ok) {
+          setStatusError(data.message || "Status check failed");
+          return;
+        }
+        setStatusResult(data);
+        setStatusError("");
+        if (data.status !== "pending") {
+          // Terminal status — stop polling
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
+      } catch {
+        // silently ignore network errors during polling
+      }
+      setPollCount(c => c + 1);
+    };
+
+    poll(); // immediate first check
+    pollRef.current = setInterval(poll, 3000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [pushResult]);
+
   const pay = async () => {
     if (!phone) return;
+    const formatted = formatPhone(phone);
     setSending(true);
     setPushError("");
 
     try {
-      const body: Record<string, unknown> = { phoneNumber: phone.trim() };
+      const body: Record<string, unknown> = { phoneNumber: formatted };
       if (!linkInfo?.amount) body.amount = Number(customAmount);
 
       const res = await fetch(`${API_BASE}/api/pay/${slug}`, {
@@ -77,22 +122,8 @@ export default function Pay() {
     }
   };
 
-  const checkStatus = async () => {
-    if (!pushResult) return;
-    setChecking(true);
-    setStatusError("");
-
-    try {
-      const res = await fetch(`${API_BASE}/api/payments/status/${pushResult.checkoutRequestId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Status check failed");
-      setStatusResult(data);
-    } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Status check failed");
-    } finally {
-      setChecking(false);
-    }
-  };
+  const phoneFormatted = formatPhone(phone);
+  const phoneValid = /^2547\d{8}$|^2541\d{8}$/.test(phoneFormatted);
 
   if (linkError) {
     return (
@@ -122,10 +153,10 @@ export default function Pay() {
   };
 
   const statusIcons: Record<string, React.ReactNode> = {
-    completed: <CheckCircle className="w-5 h-5 text-green-600" />,
-    pending: <Clock className="w-5 h-5 text-yellow-600" />,
-    failed: <XCircle className="w-5 h-5 text-red-500" />,
-    cancelled: <XCircle className="w-5 h-5 text-gray-400" />,
+    completed: <CheckCircle className="w-6 h-6 text-green-600" />,
+    pending: <Clock className="w-6 h-6 text-yellow-600" />,
+    failed: <XCircle className="w-6 h-6 text-red-500" />,
+    cancelled: <XCircle className="w-6 h-6 text-gray-400" />,
   };
 
   return (
@@ -150,15 +181,20 @@ export default function Pay() {
         {!pushResult ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Your Phone Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Your Safaricom Number</label>
               <input
                 type="tel"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
-                placeholder="254712345678"
+                placeholder="0712345678 or 254712345678"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50"
               />
-              <p className="text-xs text-gray-400 mt-1">Safaricom M-Pesa number: 2547XXXXXXXX</p>
+              {phone && (
+                <p className={`text-xs mt-1 ${phoneValid ? "text-green-600" : "text-amber-600"}`}>
+                  {phoneValid ? `✓ Will send to ${phoneFormatted}` : `Enter a valid Safaricom number`}
+                </p>
+              )}
+              {!phone && <p className="text-xs text-gray-400 mt-1">M-Pesa registered number</p>}
             </div>
 
             {!linkInfo.amount && (
@@ -177,7 +213,7 @@ export default function Pay() {
 
             <button
               onClick={pay}
-              disabled={sending || !phone || (!linkInfo.amount && !customAmount)}
+              disabled={sending || !phoneValid || (!linkInfo.amount && !customAmount)}
               className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
             >
               {sending ? (
@@ -199,23 +235,46 @@ export default function Pay() {
           </div>
         ) : (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-green-700 font-semibold mb-1">Check your phone!</p>
-              <p className="text-green-600 text-sm">{pushResult.customerMessage}</p>
-              <p className="text-xs text-gray-500 mt-2 font-mono">Ref: {pushResult.checkoutRequestId}</p>
-            </div>
-
-            <button
-              onClick={checkStatus}
-              disabled={checking}
-              className="w-full bg-white hover:bg-gray-50 text-green-700 font-semibold py-3 rounded-xl border-2 border-green-600 transition-colors flex items-center justify-center gap-2"
-            >
-              {checking ? (
-                <><RefreshCw className="w-4 h-4 animate-spin" /> Checking...</>
-              ) : (
-                <><RefreshCw className="w-4 h-4" /> Verify Payment</>
-              )}
-            </button>
+            {/* Status display */}
+            {statusResult ? (
+              <div className={`border rounded-xl p-5 space-y-3 ${statusColors[statusResult.status]}`}>
+                <div className="flex items-center gap-2">
+                  {statusIcons[statusResult.status]}
+                  <span className="font-bold capitalize text-xl">{statusResult.status}</span>
+                </div>
+                <div className="space-y-1.5 text-sm">
+                  {[
+                    ["Amount", `KES ${Number(statusResult.amount).toLocaleString()}`],
+                    ["Phone", statusResult.phoneNumber],
+                    ...(statusResult.mpesaReceiptNumber ? [["M-Pesa Receipt", statusResult.mpesaReceiptNumber]] : []),
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-2">
+                      <span className="opacity-70">{k}</span>
+                      <span className="font-semibold">{v}</span>
+                    </div>
+                  ))}
+                </div>
+                {statusResult.status === "pending" && (
+                  <p className="text-xs opacity-70 flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Checking automatically...
+                  </p>
+                )}
+                {statusResult.status === "completed" && (
+                  <p className="text-sm font-medium text-green-700">
+                    Payment received! Thank you.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+                <p className="text-green-700 font-semibold">Check your phone!</p>
+                <p className="text-green-600 text-sm">{pushResult.customerMessage}</p>
+                <p className="text-xs text-gray-500 font-mono">Ref: {pushResult.checkoutRequestId}</p>
+                <p className="text-xs text-green-600 flex items-center gap-1 mt-2">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> Verifying automatically every 3 seconds...
+                </p>
+              </div>
+            )}
 
             {statusError && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-sm">
@@ -223,25 +282,11 @@ export default function Pay() {
               </div>
             )}
 
-            {statusResult && (
-              <div className={`border rounded-xl p-4 space-y-2 ${statusColors[statusResult.status]}`}>
-                <div className="flex items-center gap-2">
-                  {statusIcons[statusResult.status]}
-                  <span className="font-bold capitalize text-lg">{statusResult.status}</span>
-                </div>
-                <div className="space-y-1 text-sm">
-                  {[
-                    ["Amount", `KES ${statusResult.amount}`],
-                    ["Phone", statusResult.phoneNumber],
-                    ["M-Pesa Receipt", statusResult.mpesaReceiptNumber || "—"],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex justify-between">
-                      <span className="opacity-70">{k}</span>
-                      <span className="font-semibold">{v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {/* Show the reference even after status resolves */}
+            {!statusResult && (
+              <p className="text-xs text-gray-400 text-center">
+                Enter your M-Pesa PIN when prompted on your phone.
+              </p>
             )}
           </div>
         )}

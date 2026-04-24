@@ -1,11 +1,35 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { paymentLinksTable, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { paymentLinksTable, transactionsTable, settlementAccountsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import { initiateSTKPush } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
 const router = Router();
+
+// Public status endpoint — MUST be registered before /pay/:slug to avoid shadowing
+router.get("/pay/status/:checkoutRequestId", async (req, res) => {
+  const { checkoutRequestId } = req.params;
+
+  const txs = await db
+    .select()
+    .from(transactionsTable)
+    .where(eq(transactionsTable.checkoutRequestId, checkoutRequestId));
+
+  if (txs.length === 0) {
+    res.status(404).json({ error: "NOT_FOUND", message: "Transaction not found" });
+    return;
+  }
+
+  const tx = txs[0];
+  res.json({
+    status: tx.status,
+    mpesaReceiptNumber: tx.mpesaReceiptNumber,
+    amount: tx.amount,
+    phoneNumber: tx.phoneNumber,
+    updatedAt: tx.updatedAt,
+  });
+});
 
 router.get("/pay/:slug", async (req, res) => {
   const { slug } = req.params;
@@ -71,6 +95,18 @@ router.post("/pay/:slug", async (req, res) => {
     return;
   }
 
+  // Resolve the merchant's default settlement account automatically
+  let settlementAccountId: number | null = null;
+  const defaults = await db
+    .select()
+    .from(settlementAccountsTable)
+    .where(and(
+      eq(settlementAccountsTable.userId, link.userId),
+      eq(settlementAccountsTable.isDefault, true),
+      eq(settlementAccountsTable.isActive, true)
+    ));
+  if (defaults.length > 0) settlementAccountId = defaults[0].id;
+
   const callbackUrl = `${req.protocol}://${req.get("host")}/api/payments/callback`;
 
   try {
@@ -84,6 +120,7 @@ router.post("/pay/:slug", async (req, res) => {
 
     const [tx] = await db.insert(transactionsTable).values({
       userId: link.userId,
+      settlementAccountId,
       checkoutRequestId: result.CheckoutRequestID,
       merchantRequestId: result.MerchantRequestID,
       phoneNumber,

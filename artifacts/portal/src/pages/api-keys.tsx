@@ -11,6 +11,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Copy, Plus, Trash2, KeyRound, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -173,15 +174,23 @@ export default function ApiKeys() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Public Key</div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-gray-100 dark:bg-gray-800 p-2 rounded text-sm font-mono truncate">
-                      {key.publicKey}
-                    </code>
-                    <Button variant="outline" size="icon" onClick={() => copyToClipboard(key.publicKey)}>
-                      <Copy className="w-4 h-4" />
-                    </Button>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-muted-foreground">Public Identifier</div>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-gray-100 dark:bg-gray-800 p-2 rounded text-sm font-mono truncate">
+                        {key.publicKey}
+                      </code>
+                      <Button variant="outline" size="icon" onClick={() => copyToClipboard(key.publicKey)}>
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-amber-800 text-xs flex gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>
+                      API calls use your <strong>Secret Key</strong> (starts with <code className="bg-amber-100 px-1 rounded">sk_</code>), which was shown once when this key was created. If you lost it, create a new key.
+                    </span>
                   </div>
                 </div>
               </CardContent>

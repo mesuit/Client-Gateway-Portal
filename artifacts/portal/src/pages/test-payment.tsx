@@ -139,7 +139,7 @@ export default function TestPayment() {
           <CardDescription>
             Use your <strong>Secret Key</strong> from the{" "}
             <Link href="/api-keys" className="text-primary underline underline-offset-2">API Keys page</Link>.
-            It starts with <code className="bg-muted px-1 rounded text-xs">nxp_</code>.
+            It starts with <code className="bg-muted px-1 rounded text-xs">sk_</code> and was shown once on creation.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -148,7 +148,7 @@ export default function TestPayment() {
               type={showKey ? "text" : "password"}
               value={apiKey}
               onChange={e => saveKey(e.target.value)}
-              placeholder="nxp_live_..."
+              placeholder="sk_live_..."
               className="pr-10 font-mono text-sm"
             />
             <button
