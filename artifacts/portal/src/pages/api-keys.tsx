@@ -2,19 +2,19 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { 
-  useListApiKeys, 
-  useCreateApiKey, 
+import {
+  useListApiKeys,
+  useCreateApiKey,
   useRevokeApiKey,
   getListApiKeysQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Copy, Plus, Trash2, KeyRound, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
-import { Label } from "@/components/ui/label";
+import { Copy, Plus, Trash2, KeyRound, CheckCircle2, AlertTriangle, Loader2, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -48,15 +48,17 @@ const createKeySchema = z.object({
   keyName: z.string().min(2, "Name must be at least 2 characters").max(50),
 });
 
+interface NewKeyData { name: string; publicKey: string; secretKey: string; }
+
 export default function ApiKeys() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [revokeId, setRevokeId] = useState<number | null>(null);
-  
-  const [newKeyData, setNewKeyData] = useState<{ name: string; publicKey: string; secretKey: string } | null>(null);
-  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [newKeyData, setNewKeyData] = useState<NewKeyData | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const { data: keys, isLoading } = useListApiKeys();
   const createMutation = useCreateApiKey();
@@ -73,14 +75,15 @@ export default function ApiKeys() {
       {
         onSuccess: (data) => {
           queryClient.invalidateQueries({ queryKey: getListApiKeysQueryKey() });
+          setIsCreateOpen(false);
+          form.reset();
+          setShowSecret(false);
+          setCopied(false);
           setNewKeyData({
             name: values.keyName,
             publicKey: data.publicKey,
             secretKey: data.secretKey,
           });
-          setIsCreateOpen(false);
-          form.reset();
-          toast({ title: "API Key created successfully" });
         },
         onError: (err) => {
           toast({ title: "Failed to create key", description: err.message, variant: "destructive" });
@@ -106,14 +109,97 @@ export default function ApiKeys() {
     );
   };
 
-  const copyToClipboard = (text: string, isSecret = false) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: "Copied to clipboard" });
-    if (isSecret) {
-      setCopiedSecret(true);
-      setTimeout(() => setCopiedSecret(false), 2000);
-    }
+  const copySecret = () => {
+    if (!newKeyData) return;
+    navigator.clipboard.writeText(newKeyData.secretKey).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+      toast({ title: "Secret key copied to clipboard" });
+    });
   };
+
+  // Full-page success view when a key was just created
+  if (newKeyData) {
+    return (
+      <div className="space-y-6 max-w-2xl">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+            <CheckCircle2 className="w-6 h-6 text-green-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">API Key Created</h2>
+            <p className="text-muted-foreground text-sm">Key: <strong>{newKeyData.name}</strong></p>
+          </div>
+        </div>
+
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2 text-amber-800">
+              <AlertTriangle className="w-5 h-5" />
+              <CardTitle className="text-base text-amber-800">Copy your secret key now</CardTitle>
+            </div>
+            <CardDescription className="text-amber-700">
+              This is the <strong>only time</strong> you will see the full secret key. Store it securely — you cannot retrieve it later.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-amber-800 font-semibold">Secret Key (use this for API calls)</Label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    readOnly
+                    value={newKeyData.secretKey}
+                    type={showSecret ? "text" : "password"}
+                    className="font-mono text-sm bg-white pr-10 border-amber-300"
+                  />
+                  <button
+                    onClick={() => setShowSecret(p => !p)}
+                    className="absolute right-3 top-2.5 text-amber-600 hover:text-amber-800"
+                  >
+                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <Button
+                  onClick={copySecret}
+                  className={copied ? "bg-green-600 hover:bg-green-700" : "bg-amber-600 hover:bg-amber-700"}
+                >
+                  {copied ? <><CheckCircle2 className="w-4 h-4 mr-2" /> Copied!</> : <><Copy className="w-4 h-4 mr-2" /> Copy</>}
+                </Button>
+              </div>
+              <p className="text-xs text-amber-700 font-mono">Prefix: {newKeyData.secretKey.slice(0, 10)}...</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Public Identifier (not used for API auth)</Label>
+              <div className="flex gap-2">
+                <Input readOnly value={newKeyData.publicKey} className="font-mono text-sm bg-gray-50 text-gray-500" />
+                <Button variant="outline" onClick={() => { navigator.clipboard.writeText(newKeyData.publicKey); toast({ title: "Copied" }); }}>
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
+          <p className="font-semibold">How to use your secret key:</p>
+          <code className="block bg-gray-900 text-green-300 p-3 rounded-lg text-xs font-mono mt-2">
+            {`X-API-Key: ${newKeyData.secretKey.slice(0, 20)}...`}
+          </code>
+          <p className="text-xs text-gray-400 mt-2">Pass this header in every API request to authenticate.</p>
+        </div>
+
+        <Button
+          onClick={() => setNewKeyData(null)}
+          variant="outline"
+          className="gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to API Keys
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -136,9 +222,9 @@ export default function ApiKeys() {
         <Card className="border-dashed bg-gray-50/50">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <KeyRound className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">No API keys found</h3>
+            <h3 className="text-lg font-medium">No API keys yet</h3>
             <p className="text-sm text-muted-foreground max-w-sm mt-1 mb-4">
-              Create an API key to authenticate your server requests to the Nexus Pay API.
+              Create your first API key to start accepting M-Pesa payments via the Nexus Pay API.
             </p>
             <Button onClick={() => setIsCreateOpen(true)}>Create Secret Key</Button>
           </CardContent>
@@ -158,8 +244,8 @@ export default function ApiKeys() {
                     )}
                   </div>
                   {key.isActive && (
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="icon"
                       className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => setRevokeId(key.id)}
@@ -181,7 +267,7 @@ export default function ApiKeys() {
                       <code className="flex-1 bg-gray-100 dark:bg-gray-800 p-2 rounded text-sm font-mono truncate">
                         {key.publicKey}
                       </code>
-                      <Button variant="outline" size="icon" onClick={() => copyToClipboard(key.publicKey)}>
+                      <Button variant="outline" size="icon" onClick={() => { navigator.clipboard.writeText(key.publicKey); toast({ title: "Copied" }); }}>
                         <Copy className="w-4 h-4" />
                       </Button>
                     </div>
@@ -189,7 +275,7 @@ export default function ApiKeys() {
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-amber-800 text-xs flex gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>
-                      API calls use your <strong>Secret Key</strong> (starts with <code className="bg-amber-100 px-1 rounded">sk_</code>), which was shown once when this key was created. If you lost it, create a new key.
+                      API calls require your <strong>Secret Key</strong> (<code className="bg-amber-100 px-1 rounded">sk_...</code>), shown once at creation. If lost, create a new key.
                     </span>
                   </div>
                 </div>
@@ -205,7 +291,7 @@ export default function ApiKeys() {
           <DialogHeader>
             <DialogTitle>Create API Key</DialogTitle>
             <DialogDescription>
-              Give your new API key a descriptive name so you can identify it later.
+              Give your key a name (e.g. "Production Server" or "Website"). The secret key is shown once — copy it immediately.
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -235,62 +321,18 @@ export default function ApiKeys() {
         </DialogContent>
       </Dialog>
 
-      {/* Secret Key Modal (Shown only once) */}
-      <Dialog open={!!newKeyData} onOpenChange={(open) => !open && setNewKeyData(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-2 text-green-600 mb-2">
-              <CheckCircle2 className="w-5 h-5" />
-              <DialogTitle>API Key Created</DialogTitle>
-            </div>
-            <DialogDescription>
-              Please copy your secret key now. You will not be able to see it again!
-            </DialogDescription>
-          </DialogHeader>
-          
-          {newKeyData && (
-            <div className="space-y-4 my-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 flex gap-3 text-yellow-800">
-                <AlertTriangle className="w-5 h-5 shrink-0" />
-                <p className="text-sm">Store this secret key securely. If you lose it, you'll need to generate a new API key.</p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Secret Key</Label>
-                <div className="flex gap-2">
-                  <Input readOnly value={newKeyData.secretKey} className="font-mono text-sm bg-gray-50" />
-                  <Button 
-                    variant={copiedSecret ? "default" : "outline"} 
-                    className={copiedSecret ? "bg-green-600 hover:bg-green-700" : ""}
-                    onClick={() => copyToClipboard(newKeyData.secretKey, true)}
-                  >
-                    {copiedSecret ? "Copied!" : <><Copy className="w-4 h-4 mr-2" /> Copy</>}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <DialogFooter>
-            <Button onClick={() => setNewKeyData(null)} className="w-full">
-              I have saved my secret key
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Revoke Confirmation */}
       <AlertDialog open={!!revokeId} onOpenChange={(open) => !open && setRevokeId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke API Key?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. Any applications using this API key will immediately lose access and requests will fail.
+              This cannot be undone. Any app using this key will immediately lose access.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={(e) => { e.preventDefault(); handleRevoke(); }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={revokeMutation.isPending}
