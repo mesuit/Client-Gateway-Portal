@@ -119,7 +119,7 @@ export default function ApiKeys() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">API Keys</h2>
-          <p className="text-muted-foreground">Manage your API keys for integrating with PesaGate.</p>
+          <p className="text-muted-foreground">Manage your API keys for integrating with Nexus Pay.</p>
         </div>
         <Button onClick={() => setIsCreateOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
@@ -137,7 +137,7 @@ export default function ApiKeys() {
             <KeyRound className="w-12 h-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium">No API keys found</h3>
             <p className="text-sm text-muted-foreground max-w-sm mt-1 mb-4">
-              Create an API key to authenticate your server requests to the PesaGate API.
+              Create an API key to authenticate your server requests to the Nexus Pay API.
             </p>
             <Button onClick={() => setIsCreateOpen(true)}>Create Secret Key</Button>
           </CardContent>

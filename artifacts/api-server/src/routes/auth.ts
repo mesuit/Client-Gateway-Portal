@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { usersTable, sessionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { hashPassword, verifyPassword, createSession, requireAuth, type AuthRequest } from "../lib/auth";
+import { hashPassword, verifyPassword, createSession, requireAuth, invalidateSessionCache, type AuthRequest } from "../lib/auth";
 
 const router = Router();
 
@@ -87,6 +87,7 @@ router.post("/auth/login", async (req, res) => {
 router.post("/auth/logout", requireAuth, async (req: AuthRequest, res) => {
   const authHeader = req.headers.authorization!;
   const token = authHeader.slice(7);
+  invalidateSessionCache(token);
   await db.delete(sessionsTable).where(eq(sessionsTable.token, token));
   res.json({ message: "Logged out successfully" });
 });

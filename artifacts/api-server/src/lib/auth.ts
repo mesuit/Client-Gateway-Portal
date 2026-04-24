@@ -20,6 +20,30 @@ export function verifyPassword(password: string, stored: string): boolean {
   return hashBuf.toString("hex") === hash;
 }
 
+interface CachedSession {
+  userId: number;
+  email: string;
+  businessName: string;
+  expiresAt: number;
+}
+
+const sessionCache = new Map<string, CachedSession>();
+const CACHE_TTL_MS = 60 * 1000; // cache each token for 60 seconds
+
+function getCached(token: string): CachedSession | null {
+  const entry = sessionCache.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    sessionCache.delete(token);
+    return null;
+  }
+  return entry;
+}
+
+export function invalidateSessionCache(token: string): void {
+  sessionCache.delete(token);
+}
+
 export async function createSession(userId: number): Promise<string> {
   const token = generateToken();
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
@@ -41,8 +65,17 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 
   const token = authHeader.slice(7);
-  const now = new Date();
 
+  const cached = getCached(token);
+  if (cached) {
+    req.userId = cached.userId;
+    req.userEmail = cached.email;
+    req.businessName = cached.businessName;
+    next();
+    return;
+  }
+
+  const now = new Date();
   const rows = await db
     .select({ userId: sessionsTable.userId, email: usersTable.email, businessName: usersTable.businessName })
     .from(sessionsTable)
@@ -53,6 +86,13 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     res.status(401).json({ error: "Unauthorized", message: "Invalid or expired token" });
     return;
   }
+
+  sessionCache.set(token, {
+    userId: rows[0].userId,
+    email: rows[0].email,
+    businessName: rows[0].businessName,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
 
   req.userId = rows[0].userId;
   req.userEmail = rows[0].email;
