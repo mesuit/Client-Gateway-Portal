@@ -2,12 +2,12 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { paymentLinksTable, transactionsTable, settlementAccountsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { initiateSTKPush } from "../lib/mpesa";
+import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
 const router = Router();
 
-// Public status endpoint — MUST be registered before /pay/:slug to avoid shadowing
+// Public status endpoint — MUST be before /pay/:slug to avoid route shadowing
 router.get("/pay/status/:checkoutRequestId", async (req, res) => {
   const { checkoutRequestId } = req.params;
 
@@ -95,8 +95,10 @@ router.post("/pay/:slug", async (req, res) => {
     return;
   }
 
-  // Resolve the merchant's default settlement account automatically
+  // Look up merchant's default settlement account
   let settlementAccountId: number | null = null;
+  let merchantTill: string | undefined = undefined;
+
   const defaults = await db
     .select()
     .from(settlementAccountsTable)
@@ -105,9 +107,16 @@ router.post("/pay/:slug", async (req, res) => {
       eq(settlementAccountsTable.isDefault, true),
       eq(settlementAccountsTable.isActive, true)
     ));
-  if (defaults.length > 0) settlementAccountId = defaults[0].id;
 
-  const callbackUrl = `${req.protocol}://${req.get("host")}/api/payments/callback`;
+  if (defaults.length > 0) {
+    settlementAccountId = defaults[0].id;
+    // If the merchant's settlement is a till, route money directly to their till
+    if (defaults[0].accountType === "till") {
+      merchantTill = defaults[0].accountNumber;
+    }
+  }
+
+  const callbackUrl = `${getCallbackBaseUrl(req)}/api/payments/callback`;
 
   try {
     const result = await initiateSTKPush({
@@ -116,6 +125,7 @@ router.post("/pay/:slug", async (req, res) => {
       accountReference: link.accountReference,
       transactionDesc: link.transactionDesc,
       callbackUrl,
+      merchantTill,
     });
 
     const [tx] = await db.insert(transactionsTable).values({

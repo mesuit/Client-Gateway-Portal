@@ -3,22 +3,10 @@ import { db } from "@workspace/db";
 import { transactionsTable, settlementAccountsTable, apiKeysTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
-import { initiateSTKPush } from "../lib/mpesa";
+import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
 const router = Router();
-
-function getCallbackUrl(req: ApiKeyRequest): string {
-  const domains = process.env.REPLIT_DOMAINS?.split(",")[0];
-  if (domains) {
-    return `https://${domains}/api/payments/callback`;
-  }
-  const devDomain = process.env.REPLIT_DEV_DOMAIN;
-  if (devDomain) {
-    return `https://${devDomain}/api/payments/callback`;
-  }
-  return `${req.protocol}://${req.get("host")}/api/payments/callback`;
-}
 
 router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) => {
   const { phoneNumber, amount, accountReference, transactionDesc, settlementAccountId } = req.body;
@@ -33,7 +21,8 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
     return;
   }
 
-  let resolvedSettlementId: number | null = null;
+  // Resolve settlement account: use specified one or fall back to merchant's default
+  let resolvedSettlement: { id: number; accountNumber: string; accountType: string } | null = null;
 
   if (settlementAccountId) {
     const accts = await db
@@ -48,7 +37,7 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       res.status(400).json({ error: "INVALID_SETTLEMENT", message: "Settlement account not found or not yours" });
       return;
     }
-    resolvedSettlementId = settlementAccountId;
+    resolvedSettlement = accts[0];
   } else {
     const defaults = await db
       .select()
@@ -58,10 +47,16 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
         eq(settlementAccountsTable.isDefault, true),
         eq(settlementAccountsTable.isActive, true)
       ));
-    if (defaults.length > 0) resolvedSettlementId = defaults[0].id;
+    if (defaults.length > 0) resolvedSettlement = defaults[0];
   }
 
-  const callbackUrl = getCallbackUrl(req);
+  // Build callback URL reliably using env var or domain detection
+  const callbackUrl = `${getCallbackBaseUrl(req)}/api/payments/callback`;
+
+  // If the merchant's settlement is a till, route money directly to their till (BuyGoods)
+  const merchantTill = resolvedSettlement?.accountType === "till"
+    ? resolvedSettlement.accountNumber
+    : undefined;
 
   try {
     const result = await initiateSTKPush({
@@ -70,11 +65,12 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       accountReference,
       transactionDesc,
       callbackUrl,
+      merchantTill,
     });
 
     const [tx] = await db.insert(transactionsTable).values({
       userId: req.apiKeyUserId!,
-      settlementAccountId: resolvedSettlementId,
+      settlementAccountId: resolvedSettlement?.id ?? null,
       checkoutRequestId: result.CheckoutRequestID,
       merchantRequestId: result.MerchantRequestID,
       phoneNumber,

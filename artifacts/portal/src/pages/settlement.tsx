@@ -11,7 +11,7 @@ import {
   AddSettlementAccountRequestAccountType
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, Building2, Store, Check, Trash2, Loader2, Star } from "lucide-react";
+import { Plus, Building2, Store, Check, Trash2, Loader2, Star, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,6 +132,14 @@ export default function Settlement() {
           <Plus className="w-4 h-4 mr-2" />
           Add Account
         </Button>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex gap-3 text-blue-800 text-sm">
+        <Info className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
+        <div>
+          <p className="font-semibold mb-1">How settlement works</p>
+          <p>When a customer pays via your API or a payment link, the M-Pesa STK prompt is sent by the Nexus Pay platform — but if you have a <strong>Buy Goods Till</strong> set as default, the money goes <em>directly into your till</em>. Your customer sees your business name and you receive the M-Pesa confirmation SMS. No funds pass through Nexus Pay.</p>
+        </div>
       </div>
 
       {isLoading ? (

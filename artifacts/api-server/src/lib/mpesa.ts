@@ -53,12 +53,28 @@ export function getPassword(timestamp: string): string {
   return Buffer.from(raw).toString("base64");
 }
 
+export function getCallbackBaseUrl(req?: { protocol: string; get(h: string): string | undefined }): string {
+  // 1. Explicit override via env var (set this on VPS)
+  if (process.env.CALLBACK_BASE_URL) return process.env.CALLBACK_BASE_URL.replace(/\/$/, "");
+  // 2. Replit prod domain
+  const replitDomain = process.env.REPLIT_DOMAINS?.split(",")[0];
+  if (replitDomain) return `https://${replitDomain}`;
+  // 3. Replit dev domain
+  const devDomain = process.env.REPLIT_DEV_DOMAIN;
+  if (devDomain) return `https://${devDomain}`;
+  // 4. Derive from request
+  if (req) return `${req.protocol}://${req.get("host")}`;
+  return "https://pay.makamesco-tech.co.ke";
+}
+
 export interface STKPushParams {
   phoneNumber: string;
   amount: number;
   accountReference: string;
   transactionDesc: string;
   callbackUrl: string;
+  /** Merchant's M-Pesa till number. When set, money goes to merchant's till (BuyGoods). */
+  merchantTill?: string;
 }
 
 export interface STKPushResult {
@@ -76,19 +92,27 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
 
   const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
 
+  // If a merchant till is provided, send money to them (BuyGoods / CustomerBuyGoodsOnline).
+  // The platform's shortcode is used for auth; the merchant's till receives the funds.
+  // If no merchant till, fall back to platform's own shortcode (PayBill).
+  const partyB = params.merchantTill || SHORTCODE;
+  const transactionType = params.merchantTill ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline";
+
   const body = {
     BusinessShortCode: SHORTCODE,
     Password: password,
     Timestamp: timestamp,
-    TransactionType: "CustomerPayBillOnline",
+    TransactionType: transactionType,
     Amount: Math.ceil(params.amount),
     PartyA: phone,
-    PartyB: SHORTCODE,
+    PartyB: partyB,
     PhoneNumber: phone,
     CallBackURL: params.callbackUrl,
     AccountReference: params.accountReference,
     TransactionDesc: params.transactionDesc,
   };
+
+  logger.info({ partyB, transactionType, phone, amount: params.amount }, "Initiating STK Push");
 
   const response = await fetch(`${MPESA_BASE_URL}/mpesa/stkpush/v1/processrequest`, {
     method: "POST",
