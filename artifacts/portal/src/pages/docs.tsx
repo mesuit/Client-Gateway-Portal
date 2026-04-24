@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Terminal, Code2 } from "lucide-react";
 
-const CURL_EXAMPLE = `curl -X POST https://api.pesagate.com/v1/stkpush \\
+const CURL_EXAMPLE = `curl -X POST https://YOUR_DOMAIN/api/payments/stkpush \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: YOUR_SECRET_KEY" \\
   -d '{
@@ -12,7 +12,7 @@ const CURL_EXAMPLE = `curl -X POST https://api.pesagate.com/v1/stkpush \\
     "transactionDesc": "Payment for order #001"
   }'`;
 
-const NODE_EXAMPLE = `const response = await fetch('https://api.pesagate.com/v1/stkpush', {
+const NODE_EXAMPLE = `const response = await fetch('https://YOUR_DOMAIN/api/payments/stkpush', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -34,12 +34,12 @@ export default function Docs() {
     <div className="space-y-6 max-w-4xl">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">API Documentation</h2>
-        <p className="text-muted-foreground">Integrate PesaGate into your application.</p>
+        <p className="text-muted-foreground">Integrate Makamesco Nexus Pay into your application.</p>
       </div>
 
       <div className="prose dark:prose-invert max-w-none">
         <p className="text-lg">
-          The PesaGate API uses REST principles and authenticates requests via an <code>X-API-Key</code> header. 
+          The Nexus Pay API uses REST principles and authenticates requests via an <code>X-API-Key</code> header. 
           Use your Secret Key for server-side API calls. Never expose your Secret Key in client-side code.
         </p>
 

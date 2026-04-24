@@ -41,9 +41,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         <div className="h-16 flex items-center px-6 border-b border-sidebar-border/50">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded flex items-center justify-center text-primary-foreground font-bold text-xl leading-none">
-              P
+              N
             </div>
-            <span className="font-bold text-lg tracking-tight">PesaGate</span>
+            <span className="font-bold text-lg tracking-tight">Nexus Pay</span>
           </div>
         </div>
         

@@ -66,11 +66,11 @@ export default function Login() {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <div className="w-12 h-12 bg-primary rounded-lg mx-auto flex items-center justify-center text-primary-foreground font-bold text-2xl mb-4">
-            P
+            N
           </div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Sign in to PesaGate</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Sign in to Nexus Pay</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Manage your M-Pesa payments
+            Makamesco Nexus Pay — M-Pesa payment gateway
           </p>
         </div>
 

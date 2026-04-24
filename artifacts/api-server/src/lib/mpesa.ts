@@ -1,6 +1,6 @@
 import { logger } from "./logger";
 
-const MPESA_BASE_URL = "https://sandbox.safaricom.co.ke";
+const MPESA_BASE_URL = "https://api.safaricom.co.ke";
 const CONSUMER_KEY = process.env.MPESA_CONSUMER_KEY!;
 const CONSUMER_SECRET = process.env.MPESA_CONSUMER_SECRET!;
 const PASSKEY = process.env.MPESA_PASSKEY!;

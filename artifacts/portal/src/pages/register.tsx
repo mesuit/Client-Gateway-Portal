@@ -48,7 +48,7 @@ export default function Register() {
       {
         onSuccess: (data) => {
           login(data.token, data.user);
-          toast({ title: "Account created", description: "Welcome to PesaGate!" });
+          toast({ title: "Account created", description: "Welcome to Makamesco Nexus Pay!" });
           setLocation("/dashboard");
         },
         onError: (error) => {
@@ -67,7 +67,7 @@ export default function Register() {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <div className="w-12 h-12 bg-primary rounded-lg mx-auto flex items-center justify-center text-primary-foreground font-bold text-2xl mb-4">
-            P
+            N
           </div>
           <h2 className="text-3xl font-bold tracking-tight text-gray-900">Create an account</h2>
           <p className="mt-2 text-sm text-gray-600">
