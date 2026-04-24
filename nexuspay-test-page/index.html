@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nexus Pay — STK Push Test</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0fdf4;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 480px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      padding: 28px 32px;
+      color: #fff;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .logo-text { font-size: 20px; font-weight: 700; }
+    .card-header p { font-size: 14px; opacity: 0.85; margin-top: 4px; }
+
+    .card-body { padding: 32px; }
+
+    .form-group { margin-bottom: 20px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid #d1fae5;
+      border-radius: 8px;
+      font-size: 15px;
+      color: #111827;
+      background: #f9fafb;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+
+    input:focus { border-color: #16a34a; background: #fff; }
+
+    .hint { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+    .divider {
+      border: none;
+      border-top: 1.5px solid #f3f4f6;
+      margin: 24px 0;
+    }
+
+    button {
+      width: 100%;
+      padding: 13px;
+      background: #16a34a;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    button:hover { background: #15803d; }
+    button:active { transform: scale(0.98); }
+    button:disabled { background: #86efac; cursor: not-allowed; }
+
+    .result {
+      margin-top: 24px;
+      padding: 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .result.success {
+      background: #f0fdf4;
+      border: 1.5px solid #bbf7d0;
+      color: #166534;
+    }
+
+    .result.error {
+      background: #fef2f2;
+      border: 1.5px solid #fecaca;
+      color: #991b1b;
+    }
+
+    .result-title {
+      font-weight: 700;
+      margin-bottom: 10px;
+      font-size: 15px;
+    }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+
+    .result-key { color: #6b7280; flex-shrink: 0; }
+    .result-val { font-weight: 600; text-align: right; word-break: break-all; }
+
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .api-url {
+      font-size: 12px;
+      color: #9ca3af;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .status-check {
+      margin-top: 16px;
+    }
+
+    .status-btn {
+      background: #fff;
+      color: #16a34a;
+      border: 2px solid #16a34a;
+      font-size: 14px;
+      padding: 10px;
+    }
+
+    .status-btn:hover { background: #f0fdf4; }
+    .status-btn:disabled { background: #fff; color: #86efac; border-color: #86efac; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <div class="logo">
+        <div class="logo-icon">N</div>
+        <span class="logo-text">Nexus Pay</span>
+      </div>
+      <p>STK Push Integration Test</p>
+    </div>
+
+    <div class="card-body">
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="nxp_live_..." />
+        <p class="hint">Your Nexus Pay merchant API key — never stored or sent anywhere except pay.makamesco-tech.co.ke</p>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="tel" id="phone" placeholder="254712345678" />
+        <p class="hint">Format: 254XXXXXXXXX (Safaricom number)</p>
+      </div>
+
+      <div class="form-group">
+        <label>Amount (KES)</label>
+        <input type="number" id="amount" placeholder="1" min="1" value="1" />
+      </div>
+
+      <div class="form-group">
+        <label>Account Reference</label>
+        <input type="text" id="reference" placeholder="TEST001" value="TEST001" />
+      </div>
+
+      <div class="form-group">
+        <label>Transaction Description</label>
+        <input type="text" id="description" placeholder="Test Payment" value="Test Payment" />
+      </div>
+
+      <button id="payBtn" onclick="initiatePayment()">
+        Send STK Push
+      </button>
+
+      <div class="result" id="result"></div>
+
+      <div class="status-check" id="statusCheck" style="display:none">
+        <button class="status-btn" id="statusBtn" onclick="checkStatus()">
+          Check Payment Status
+        </button>
+      </div>
+
+      <p class="api-url">Gateway: pay.makamesco-tech.co.ke</p>
+    </div>
+  </div>
+
+  <script>
+    const BASE_URL = "https://pay.makamesco-tech.co.ke";
+    let lastCheckoutId = null;
+
+    function showResult(type, content) {
+      const el = document.getElementById("result");
+      el.className = `result ${type}`;
+      el.style.display = "block";
+      el.innerHTML = content;
+    }
+
+    function buildRows(data) {
+      return Object.entries(data)
+        .map(([k, v]) => `
+          <div class="result-row">
+            <span class="result-key">${k}</span>
+            <span class="result-val">${v}</span>
+          </div>
+        `).join("");
+    }
+
+    async function initiatePayment() {
+      const apiKey     = document.getElementById("apiKey").value.trim();
+      const phone      = document.getElementById("phone").value.trim();
+      const amount     = document.getElementById("amount").value.trim();
+      const reference  = document.getElementById("reference").value.trim();
+      const desc       = document.getElementById("description").value.trim();
+
+      if (!apiKey || !phone || !amount || !reference || !desc) {
+        showResult("error", '<p class="result-title">Missing Fields</p><p>Please fill in all fields.</p>');
+        return;
+      }
+
+      const btn = document.getElementById("payBtn");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Sending STK Push...';
+      document.getElementById("statusCheck").style.display = "none";
+
+      try {
+        const res = await fetch(`${BASE_URL}/api/payments/stkpush`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify({
+            phoneNumber: phone,
+            amount: Number(amount),
+            accountReference: reference,
+            transactionDesc: desc,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showResult("error", `
+            <p class="result-title">Error ${res.status}</p>
+            <p>${data.message || data.error || "Request failed"}</p>
+          `);
+        } else {
+          lastCheckoutId = data.checkoutRequestId;
+          showResult("success", `
+            <p class="result-title">STK Push Sent!</p>
+            ${buildRows({
+              "Checkout ID": data.checkoutRequestId,
+              "Merchant Req ID": data.merchantRequestId,
+              "Response Code": data.responseCode,
+              "Message": data.customerMessage,
+              "Transaction ID": data.transactionId,
+            })}
+          `);
+          if (lastCheckoutId) {
+            document.getElementById("statusCheck").style.display = "block";
+          }
+        }
+      } catch (err) {
+        showResult("error", `
+          <p class="result-title">Network Error</p>
+          <p>${err.message}</p>
+          <p style="margin-top:8px;font-size:12px">Make sure CORS is enabled on the gateway and the API URL is reachable.</p>
+        `);
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = "Send STK Push";
+    }
+
+    async function checkStatus() {
+      if (!lastCheckoutId) return;
+      const apiKey = document.getElementById("apiKey").value.trim();
+
+      const btn = document.getElementById("statusBtn");
+      btn.disabled = true;
+      btn.textContent = "Checking...";
+
+      try {
+        const res = await fetch(`${BASE_URL}/api/payments/status/${lastCheckoutId}`, {
+          headers: { "X-API-Key": apiKey },
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showResult("error", `<p class="result-title">Status Error</p><p>${data.message || "Failed"}</p>`);
+        } else {
+          const statusColor = data.status === "completed" ? "#166534" : data.status === "pending" ? "#92400e" : "#991b1b";
+          showResult("success", `
+            <p class="result-title">Payment Status</p>
+            ${buildRows({
+              "Status": `<span style="color:${statusColor};font-weight:700">${data.status.toUpperCase()}</span>`,
+              "Amount": `KES ${data.amount}`,
+              "Phone": data.phoneNumber,
+              "M-Pesa Receipt": data.mpesaReceiptNumber || "—",
+              "Updated": new Date(data.updatedAt).toLocaleTimeString(),
+            })}
+          `);
+        }
+      } catch (err) {
+        showResult("error", `<p class="result-title">Network Error</p><p>${err.message}</p>`);
+      }
+
+      btn.disabled = false;
+      btn.textContent = "Check Payment Status";
+    }
+  </script>
+</body>
+</html>
