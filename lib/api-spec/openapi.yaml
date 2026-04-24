@@ -3,20 +3,32 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: PesaGate Payment Gateway API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: keys
+    description: API key management
+  - name: settlement
+    description: Settlement accounts
+  - name: payments
+    description: Payment operations
+  - name: transactions
+    description: Transaction history
+  - name: dashboard
+    description: Dashboard stats
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +36,633 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new merchant account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /keys:
+    get:
+      operationId: listApiKeys
+      tags: [keys]
+      summary: List API keys
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: API keys list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKey"
+    post:
+      operationId: createApiKey
+      tags: [keys]
+      summary: Create a new API key
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyRequest"
+      responses:
+        "201":
+          description: API key created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyWithSecret"
+
+  /keys/{keyId}:
+    delete:
+      operationId: revokeApiKey
+      tags: [keys]
+      summary: Revoke an API key
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /settlement:
+    get:
+      operationId: listSettlementAccounts
+      tags: [settlement]
+      summary: List settlement accounts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Settlement accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SettlementAccount"
+    post:
+      operationId: addSettlementAccount
+      tags: [settlement]
+      summary: Add a settlement account (till or paybill)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSettlementAccountRequest"
+      responses:
+        "201":
+          description: Account added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementAccount"
+
+  /settlement/{accountId}:
+    put:
+      operationId: updateSettlementAccount
+      tags: [settlement]
+      summary: Update a settlement account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSettlementAccountRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementAccount"
+    delete:
+      operationId: deleteSettlementAccount
+      tags: [settlement]
+      summary: Delete a settlement account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /settlement/{accountId}/default:
+    post:
+      operationId: setDefaultSettlementAccount
+      tags: [settlement]
+      summary: Set as default settlement account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Set as default
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /payments/stkpush:
+    post:
+      operationId: initiateSTKPush
+      tags: [payments]
+      summary: Initiate M-Pesa STK Push payment
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/STKPushRequest"
+      responses:
+        "200":
+          description: STK Push initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/STKPushResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /payments/callback:
+    post:
+      operationId: mpesaCallback
+      tags: [payments]
+      summary: M-Pesa STK Push callback (Safaricom calls this)
+      responses:
+        "200":
+          description: Callback received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /payments/status/{checkoutRequestId}:
+    get:
+      operationId: getPaymentStatus
+      tags: [payments]
+      summary: Get payment status by checkout request ID
+      security:
+        - apiKeyAuth: []
+      parameters:
+        - name: checkoutRequestId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentStatusResponse"
+
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List transactions for current user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transaction list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        businessName:
+          type: string
+      required: [email, password, businessName]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserProfile"
+      required: [token, user]
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        businessName:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, email, businessName, isActive, createdAt]
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: integer
+        keyName:
+          type: string
+        publicKey:
+          type: string
+        isActive:
+          type: boolean
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, keyName, publicKey, isActive, createdAt]
+
+    ApiKeyWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          properties:
+            secretKey:
+              type: string
+          required: [secretKey]
+
+    CreateApiKeyRequest:
+      type: object
+      properties:
+        keyName:
+          type: string
+      required: [keyName]
+
+    SettlementAccount:
+      type: object
+      properties:
+        id:
+          type: integer
+        accountType:
+          type: string
+          enum: [till, paybill]
+        accountNumber:
+          type: string
+        accountName:
+          type: string
+        isDefault:
+          type: boolean
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, accountType, accountNumber, accountName, isDefault, isActive, createdAt]
+
+    AddSettlementAccountRequest:
+      type: object
+      properties:
+        accountType:
+          type: string
+          enum: [till, paybill]
+        accountNumber:
+          type: string
+        accountName:
+          type: string
+        isDefault:
+          type: boolean
+      required: [accountType, accountNumber, accountName]
+
+    STKPushRequest:
+      type: object
+      properties:
+        phoneNumber:
+          type: string
+          description: Customer phone number (format 2547XXXXXXXX)
+        amount:
+          type: number
+          minimum: 1
+        accountReference:
+          type: string
+        transactionDesc:
+          type: string
+        settlementAccountId:
+          type: integer
+          nullable: true
+      required: [phoneNumber, amount, accountReference, transactionDesc]
+
+    STKPushResponse:
+      type: object
+      properties:
+        checkoutRequestId:
+          type: string
+        merchantRequestId:
+          type: string
+        responseCode:
+          type: string
+        responseDescription:
+          type: string
+        customerMessage:
+          type: string
+        transactionId:
+          type: integer
+      required: [checkoutRequestId, merchantRequestId, responseCode, responseDescription, customerMessage, transactionId]
+
+    PaymentStatusResponse:
+      type: object
+      properties:
+        checkoutRequestId:
+          type: string
+        status:
+          type: string
+        mpesaReceiptNumber:
+          type: string
+          nullable: true
+        amount:
+          type: string
+        phoneNumber:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [checkoutRequestId, status, amount, phoneNumber, createdAt, updatedAt]
+
+    TransactionListResponse:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [transactions, total, page, limit]
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        checkoutRequestId:
+          type: string
+          nullable: true
+        mpesaReceiptNumber:
+          type: string
+          nullable: true
+        phoneNumber:
+          type: string
+        amount:
+          type: string
+        status:
+          type: string
+        accountReference:
+          type: string
+          nullable: true
+        transactionDesc:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, phoneNumber, amount, status, createdAt, updatedAt]
+
+    DashboardStats:
+      type: object
+      properties:
+        totalTransactions:
+          type: integer
+        successfulTransactions:
+          type: integer
+        failedTransactions:
+          type: integer
+        pendingTransactions:
+          type: integer
+        totalVolume:
+          type: string
+        todayVolume:
+          type: string
+        todayTransactions:
+          type: integer
+        successRate:
+          type: number
+      required: [totalTransactions, successfulTransactions, failedTransactions, pendingTransactions, totalVolume, todayVolume, todayTransactions, successRate]

@@ -1,0 +1,110 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import { usersTable, sessionsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { hashPassword, verifyPassword, createSession, requireAuth, type AuthRequest } from "../lib/auth";
+
+const router = Router();
+
+router.post("/auth/register", async (req, res) => {
+  const { email, password, businessName } = req.body;
+
+  if (!email || !password || !businessName) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "email, password and businessName are required" });
+    return;
+  }
+  if (password.length < 8) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const existing = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase()));
+  if (existing.length > 0) {
+    res.status(400).json({ error: "EMAIL_TAKEN", message: "An account with this email already exists" });
+    return;
+  }
+
+  const passwordHash = hashPassword(password);
+  const [user] = await db.insert(usersTable).values({
+    email: email.toLowerCase(),
+    passwordHash,
+    businessName,
+  }).returning();
+
+  const token = await createSession(user.id);
+
+  res.status(201).json({
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      businessName: user.businessName,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    },
+  });
+});
+
+router.post("/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "email and password are required" });
+    return;
+  }
+
+  const users = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase()));
+  if (users.length === 0) {
+    res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Invalid email or password" });
+    return;
+  }
+
+  const user = users[0];
+  if (!verifyPassword(password, user.passwordHash)) {
+    res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Invalid email or password" });
+    return;
+  }
+
+  if (!user.isActive) {
+    res.status(403).json({ error: "ACCOUNT_DISABLED", message: "Your account has been disabled" });
+    return;
+  }
+
+  const token = await createSession(user.id);
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      businessName: user.businessName,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    },
+  });
+});
+
+router.post("/auth/logout", requireAuth, async (req: AuthRequest, res) => {
+  const authHeader = req.headers.authorization!;
+  const token = authHeader.slice(7);
+  await db.delete(sessionsTable).where(eq(sessionsTable.token, token));
+  res.json({ message: "Logged out successfully" });
+});
+
+router.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, req.userId!));
+  if (users.length === 0) {
+    res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
+    return;
+  }
+  const user = users[0];
+  res.json({
+    id: user.id,
+    email: user.email,
+    businessName: user.businessName,
+    isActive: user.isActive,
+    createdAt: user.createdAt,
+  });
+});
+
+export default router;
