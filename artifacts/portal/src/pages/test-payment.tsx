@@ -1,59 +1,71 @@
 import { useState, useEffect } from "react";
-import { Smartphone, Send, RefreshCw, CheckCircle, XCircle, Clock, Eye, EyeOff } from "lucide-react";
+import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Smartphone, Send, RefreshCw, CheckCircle, XCircle, Clock, Eye, EyeOff, KeyRound } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { getAuthHeaders } from "@/hooks/use-auth";
 
 const API_BASE = "https://pay.makamesco-tech.co.ke";
 const KEY_STORAGE = "nexuspay_test_api_key";
 
-type Status = "idle" | "loading" | "success" | "error";
+interface ApiKey { id: number; name: string; keyPrefix: string; isActive: boolean; }
+interface PushResult { checkoutRequestId: string; customerMessage: string; transactionId: number; }
+interface StatusResult { status: "pending" | "completed" | "failed" | "cancelled"; amount: string; phoneNumber: string; mpesaReceiptNumber: string | null; updatedAt: string; }
 
-interface PushResult {
-  checkoutRequestId: string;
-  merchantRequestId: string;
-  responseCode: string;
-  customerMessage: string;
-  transactionId: number;
-}
-
-interface StatusResult {
-  status: "pending" | "completed" | "failed" | "cancelled";
-  amount: string;
-  phoneNumber: string;
-  mpesaReceiptNumber: string | null;
-  updatedAt: string;
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("254")) return digits;
+  if (digits.startsWith("0") && digits.length >= 9) return "254" + digits.slice(1);
+  if (digits.startsWith("7") || digits.startsWith("1")) return "254" + digits;
+  return digits;
 }
 
 export default function TestPayment() {
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem(KEY_STORAGE) ?? "");
   const [showKey, setShowKey] = useState(false);
   const [phone, setPhone] = useState("");
   const [amount, setAmount] = useState("1");
   const [reference, setReference] = useState("TEST001");
   const [description, setDescription] = useState("Test Payment");
 
-  const [pushStatus, setPushStatus] = useState<Status>("idle");
+  const [sending, setSending] = useState(false);
   const [pushResult, setPushResult] = useState<PushResult | null>(null);
   const [pushError, setPushError] = useState("");
 
-  const [checkStatus, setCheckStatus] = useState<Status>("idle");
+  const [checking, setChecking] = useState(false);
   const [statusResult, setStatusResult] = useState<StatusResult | null>(null);
   const [statusError, setStatusError] = useState("");
 
-  useEffect(() => {
-    const saved = localStorage.getItem(KEY_STORAGE);
-    if (saved) setApiKey(saved);
-  }, []);
+  const { data: keys = [] } = useQuery<ApiKey[]>({
+    queryKey: ["api-keys-test"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/keys`, { headers: getAuthHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const saveKey = (k: string) => {
     setApiKey(k);
-    if (k) localStorage.setItem(KEY_STORAGE, k);
-    else localStorage.removeItem(KEY_STORAGE);
+    localStorage.setItem(KEY_STORAGE, k);
   };
 
+  const handlePhoneChange = (val: string) => {
+    setPhone(val);
+  };
+
+  const phoneForSend = formatPhone(phone);
+  const phoneValid = /^2547\d{8}$|^2541\d{8}$/.test(phoneForSend);
+
   const sendPush = async () => {
-    if (!apiKey || !phone || !amount) return;
-    setPushStatus("loading");
-    setPushResult(null);
+    if (!apiKey || !phoneValid || !amount) return;
+    setSending(true);
     setPushError("");
+    setPushResult(null);
     setStatusResult(null);
 
     try {
@@ -61,215 +73,216 @@ export default function TestPayment() {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
         body: JSON.stringify({
-          phoneNumber: phone.trim(),
+          phoneNumber: phoneForSend,
           amount: Number(amount),
-          accountReference: reference.trim() || "TEST",
-          transactionDesc: description.trim() || "Test Payment",
+          accountReference: reference || "TEST001",
+          transactionDesc: description || "Test Payment",
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.error || `Error ${res.status}`);
       setPushResult(data);
-      setPushStatus("success");
     } catch (err) {
       setPushError(err instanceof Error ? err.message : "Request failed");
-      setPushStatus("error");
+    } finally {
+      setSending(false);
     }
   };
 
-  const pollStatus = async () => {
-    if (!pushResult?.checkoutRequestId || !apiKey) return;
-    setCheckStatus("loading");
+  const checkStatus = async () => {
+    if (!pushResult || !apiKey) return;
+    setChecking(true);
     setStatusError("");
-
     try {
-      const res = await fetch(
-        `${API_BASE}/api/payments/status/${pushResult.checkoutRequestId}`,
-        { headers: { "X-API-Key": apiKey } }
-      );
+      const res = await fetch(`${API_BASE}/api/payments/status/${pushResult.checkoutRequestId}`, {
+        headers: { "X-API-Key": apiKey },
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+      if (!res.ok) throw new Error(data.message || "Failed");
       setStatusResult(data);
-      setCheckStatus("success");
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : "Status check failed");
-      setCheckStatus("error");
+    } finally {
+      setChecking(false);
     }
   };
 
-  const statusIcon = (s: StatusResult["status"]) => {
-    if (s === "completed") return <CheckCircle className="text-green-600 w-5 h-5" />;
-    if (s === "pending") return <Clock className="text-yellow-600 w-5 h-5" />;
-    return <XCircle className="text-red-500 w-5 h-5" />;
-  };
+  const statusColor = (s: StatusResult["status"]) => ({
+    completed: "text-green-700 bg-green-50 border-green-200",
+    pending: "text-yellow-700 bg-yellow-50 border-yellow-200",
+    failed: "text-red-700 bg-red-50 border-red-200",
+    cancelled: "text-gray-700 bg-gray-50 border-gray-200",
+  }[s]);
 
-  const statusColor = (s: StatusResult["status"]) => {
-    if (s === "completed") return "text-green-700 bg-green-50 border-green-200";
-    if (s === "pending") return "text-yellow-700 bg-yellow-50 border-yellow-200";
-    return "text-red-700 bg-red-50 border-red-200";
-  };
+  const statusIcon = (s: StatusResult["status"]) => ({
+    completed: <CheckCircle className="w-5 h-5 text-green-600" />,
+    pending: <Clock className="w-5 h-5 text-yellow-600" />,
+    failed: <XCircle className="w-5 h-5 text-red-500" />,
+    cancelled: <XCircle className="w-5 h-5 text-gray-400" />,
+  }[s]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg space-y-4">
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+          <Smartphone className="w-8 h-8 text-primary" />
+          STK Push Tester
+        </h2>
+        <p className="text-muted-foreground mt-1">Send a live M-Pesa payment prompt to any Safaricom number.</p>
+      </div>
 
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-green-600 rounded-2xl mb-3 shadow-lg">
-            <Smartphone className="w-7 h-7 text-white" />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <KeyRound className="w-4 h-4" /> API Key
+          </CardTitle>
+          <CardDescription>
+            Use your <strong>Secret Key</strong> from the{" "}
+            <Link href="/api-keys" className="text-primary underline underline-offset-2">API Keys page</Link>.
+            It starts with <code className="bg-muted px-1 rounded text-xs">nxp_</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="relative">
+            <Input
+              type={showKey ? "text" : "password"}
+              value={apiKey}
+              onChange={e => saveKey(e.target.value)}
+              placeholder="nxp_live_..."
+              className="pr-10 font-mono text-sm"
+            />
+            <button
+              onClick={() => setShowKey(p => !p)}
+              className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+            >
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">STK Push Tester</h1>
-          <p className="text-sm text-gray-500 mt-1">Makamesco Nexus Pay — Live Test</p>
-        </div>
+          {keys.filter(k => k.isActive).length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              You have {keys.filter(k => k.isActive).length} active key(s). Copy the full secret from the API Keys page.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-          <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">API Credentials</h2>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">API Key</label>
-            <div className="relative">
-              <input
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                onChange={e => saveKey(e.target.value)}
-                placeholder="nxp_live_..."
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
-              />
-              <button
-                onClick={() => setShowKey(p => !p)}
-                className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600"
-              >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">Saved locally in your browser — never sent anywhere except your gateway.</p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Payment Details</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Phone Number</Label>
+            <Input
+              type="tel"
+              value={phone}
+              onChange={e => handlePhoneChange(e.target.value)}
+              placeholder="0712345678 or 254712345678"
+            />
+            {phone && (
+              <p className={`text-xs ${phoneValid ? "text-green-600" : "text-amber-600"}`}>
+                {phoneValid
+                  ? `✓ Will send to ${phoneForSend}`
+                  : `Will be formatted to: ${phoneForSend || "—"} (enter a valid Safaricom number)`}
+              </p>
+            )}
           </div>
-        </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-          <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">Payment Details</h2>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-600 mb-1">Phone Number</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="254712345678"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
-              />
-              <p className="text-xs text-gray-400 mt-1">Format: 254XXXXXXXXX</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Amount (KES)</label>
-              <input
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Amount (KES)</Label>
+              <Input
                 type="number"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 min="1"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
               />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Reference</label>
-              <input
-                type="text"
+            <div className="space-y-2">
+              <Label>Reference</Label>
+              <Input
                 value={reference}
                 onChange={e => setReference(e.target.value)}
                 placeholder="TEST001"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
-              />
-            </div>
-
-            <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-600 mb-1">Description</label>
-              <input
-                type="text"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Test Payment"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
               />
             </div>
           </div>
 
-          <button
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Input
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Test Payment"
+            />
+          </div>
+
+          <Button
             onClick={sendPush}
-            disabled={pushStatus === "loading" || !apiKey || !phone || !amount}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+            disabled={sending || !apiKey || !phoneValid || !amount}
+            className="w-full gap-2"
           >
-            {pushStatus === "loading" ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Sending STK Push...
-              </>
+            {sending ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Sending STK Push...</>
             ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Send STK Push
-              </>
+              <><Send className="w-4 h-4" /> Send STK Push</>
             )}
-          </button>
+          </Button>
 
-          {pushStatus === "error" && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="text-red-700 font-semibold text-sm mb-1">Request Failed</p>
-              <p className="text-red-600 text-xs">{pushError}</p>
+          {pushError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+              <p className="font-semibold mb-1">Request Failed</p>
+              <p>{pushError}</p>
+              {pushError.toLowerCase().includes("api key") && (
+                <p className="mt-2 text-xs">
+                  Make sure you copied the full <strong>Secret Key</strong> from{" "}
+                  <Link href="/api-keys" className="underline">API Keys</Link> — not just the prefix.
+                </p>
+              )}
             </div>
           )}
 
-          {pushStatus === "success" && pushResult && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-              <p className="text-green-700 font-semibold text-sm">STK Push Sent! Check your phone.</p>
-              <div className="space-y-1 text-xs">
-                {[
-                  ["Message", pushResult.customerMessage],
-                  ["Checkout ID", pushResult.checkoutRequestId],
-                  ["Transaction ID", String(pushResult.transactionId)],
-                  ["Response Code", pushResult.responseCode],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-2">
-                    <span className="text-gray-500">{k}</span>
-                    <span className="font-medium text-gray-800 text-right break-all">{v}</span>
-                  </div>
-                ))}
-              </div>
+          {pushResult && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+              <p className="text-green-700 font-semibold">STK Push sent! Check the phone.</p>
+              <p className="text-green-600 text-sm">{pushResult.customerMessage}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                Checkout ID: {pushResult.checkoutRequestId}
+              </p>
             </div>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        {pushResult && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-            <h2 className="font-semibold text-gray-700 text-sm uppercase tracking-wide">Payment Status</h2>
-            <p className="text-xs text-gray-500">After paying on your phone, click below to confirm.</p>
-
-            <button
-              onClick={pollStatus}
-              disabled={checkStatus === "loading"}
-              className="w-full bg-white hover:bg-gray-50 disabled:opacity-60 text-green-700 font-semibold py-3 rounded-xl border-2 border-green-600 transition-colors flex items-center justify-center gap-2 text-sm"
-            >
-              {checkStatus === "loading" ? (
+      {pushResult && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Verify Payment</CardTitle>
+            <CardDescription>After the customer pays on their phone, check the status here.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button variant="outline" onClick={checkStatus} disabled={checking} className="w-full gap-2">
+              {checking ? (
                 <><RefreshCw className="w-4 h-4 animate-spin" /> Checking...</>
               ) : (
                 <><RefreshCw className="w-4 h-4" /> Check Status</>
               )}
-            </button>
+            </Button>
 
-            {checkStatus === "error" && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3">
-                <p className="text-red-600 text-xs">{statusError}</p>
-              </div>
+            {statusError && (
+              <p className="text-sm text-red-600">{statusError}</p>
             )}
 
-            {checkStatus === "success" && statusResult && (
-              <div className={`border rounded-xl p-4 space-y-2 ${statusColor(statusResult.status)}`}>
+            {statusResult && (
+              <div className={`border rounded-lg p-4 space-y-2 ${statusColor(statusResult.status)}`}>
                 <div className="flex items-center gap-2">
                   {statusIcon(statusResult.status)}
-                  <span className="font-bold capitalize">{statusResult.status}</span>
+                  <span className="font-bold capitalize text-lg">{statusResult.status}</span>
+                  {statusResult.status === "completed" && (
+                    <Badge className="bg-green-600">Paid</Badge>
+                  )}
                 </div>
-                <div className="space-y-1 text-xs">
+                <div className="space-y-1 text-sm">
                   {[
                     ["Amount", `KES ${statusResult.amount}`],
                     ["Phone", statusResult.phoneNumber],
@@ -278,19 +291,15 @@ export default function TestPayment() {
                   ].map(([k, v]) => (
                     <div key={k} className="flex justify-between gap-2">
                       <span className="opacity-70">{k}</span>
-                      <span className="font-semibold text-right">{v}</span>
+                      <span className="font-semibold">{v}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        <p className="text-center text-xs text-gray-400">
-          Gateway: pay.makamesco-tech.co.ke
-        </p>
-      </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

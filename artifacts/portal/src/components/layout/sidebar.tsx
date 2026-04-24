@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2 } from "lucide-react";
+import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone } from "lucide-react";
 import { useLogout } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/api-keys", label: "API Keys", icon: KeyRound },
   { href: "/settlement", label: "Settlement", icon: Building2 },
   { href: "/payment-links", label: "Payment Links", icon: Link2 },
+  { href: "/test", label: "STK Push Tester", icon: Smartphone },
   { href: "/docs", label: "Documentation", icon: BookOpen },
 ];
 

@@ -35,7 +35,6 @@ function Router() {
       </Route>
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
-      <Route path="/test" component={TestPayment} />
       <Route path="/pay/:slug" component={Pay} />
       
       {/* Protected Routes */}
@@ -56,6 +55,9 @@ function Router() {
       </Route>
       <Route path="/payment-links">
         <ProtectedRoute><PaymentLinks /></ProtectedRoute>
+      </Route>
+      <Route path="/test">
+        <ProtectedRoute><TestPayment /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />
