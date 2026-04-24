@@ -6,6 +6,8 @@ import settlementRouter from "./settlement";
 import paymentsRouter from "./payments";
 import transactionsRouter from "./transactions";
 import dashboardRouter from "./dashboard";
+import paymentLinksRouter from "./payment-links";
+import payRouter from "./pay";
 
 const router: IRouter = Router();
 
@@ -16,5 +18,7 @@ router.use(settlementRouter);
 router.use(paymentsRouter);
 router.use(transactionsRouter);
 router.use(dashboardRouter);
+router.use(paymentLinksRouter);
+router.use(payRouter);
 
 export default router;

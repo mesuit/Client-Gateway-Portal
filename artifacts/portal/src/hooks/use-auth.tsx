@@ -14,6 +14,11 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 const TOKEN_KEY = "nexuspay_token";
 
+export function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   

@@ -15,6 +15,8 @@ import ApiKeys from "@/pages/api-keys";
 import Settlement from "@/pages/settlement";
 import Docs from "@/pages/docs";
 import TestPayment from "@/pages/test-payment";
+import PaymentLinks from "@/pages/payment-links";
+import Pay from "@/pages/pay";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +36,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
       <Route path="/test" component={TestPayment} />
+      <Route path="/pay/:slug" component={Pay} />
       
       {/* Protected Routes */}
       <Route path="/dashboard">
@@ -50,6 +53,9 @@ function Router() {
       </Route>
       <Route path="/docs">
         <ProtectedRoute><Docs /></ProtectedRoute>
+      </Route>
+      <Route path="/payment-links">
+        <ProtectedRoute><PaymentLinks /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />
