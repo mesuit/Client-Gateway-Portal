@@ -8,6 +8,7 @@ import transactionsRouter from "./transactions";
 import dashboardRouter from "./dashboard";
 import paymentLinksRouter from "./payment-links";
 import payRouter from "./pay";
+import walletRouter from "./wallet";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(transactionsRouter);
 router.use(dashboardRouter);
 router.use(paymentLinksRouter);
 router.use(payRouter);
+router.use(walletRouter);
 
 export default router;
