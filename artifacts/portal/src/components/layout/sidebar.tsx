@@ -223,7 +223,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
       <aside className="w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border hidden md:flex shrink-0">
         <div className="h-16 flex items-center px-6 border-b border-sidebar-border/50">
           <div className="flex items-center gap-2">
-            <img src="/favicon.png" alt="Nexus Pay" className="w-8 h-8 rounded object-contain" />
+            <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+              <span className="text-white font-black text-sm">N</span>
+            </div>
             <span className="font-bold text-lg tracking-tight">Nexus Pay</span>
           </div>
         </div>
@@ -280,7 +282,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
       {/* ── Mobile Top Bar ── */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-sidebar text-sidebar-foreground border-b border-sidebar-border/50 h-14 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <img src="/favicon.png" alt="Nexus Pay" className="w-7 h-7 rounded object-contain" />
+          <div className="w-7 h-7 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+            <span className="text-white font-black text-xs">N</span>
+          </div>
           <span className="font-bold tracking-tight">Nexus Pay</span>
         </div>
         <div className="flex items-center gap-2">
@@ -311,7 +315,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             {/* Header */}
             <div className="h-14 flex items-center justify-between px-4 border-b border-sidebar-border/50 shrink-0">
               <div className="flex items-center gap-2">
-                <img src="/favicon.png" alt="Nexus Pay" className="w-7 h-7 rounded object-contain" />
+                <div className="w-7 h-7 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+                  <span className="text-white font-black text-xs">N</span>
+                </div>
                 <span className="font-bold">Nexus Pay</span>
               </div>
               <button

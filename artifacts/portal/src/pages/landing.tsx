@@ -211,7 +211,9 @@ export default function Landing() {
       <footer className="py-10 px-6 border-t border-gray-100 bg-white">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
           <div className="flex items-center gap-2">
-            <img src="/favicon.png" alt="Nexus Pay" className="w-7 h-7 rounded-lg object-cover" />
+            <div className="w-7 h-7 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+              <span className="text-white font-black text-xs">N</span>
+            </div>
             <span>Nexus Pay · Makamesco Tech</span>
           </div>
           <div className="flex gap-6">
