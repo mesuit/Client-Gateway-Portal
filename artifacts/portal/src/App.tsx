@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/components/layout/protected-route";
+import { AdminRoute } from "@/components/layout/admin-route";
 
 function WhatsAppButton() {
   return (
@@ -77,7 +78,7 @@ function Router() {
         <ProtectedRoute><TestPayment /></ProtectedRoute>
       </Route>
       <Route path="/admin">
-        <ProtectedRoute><AdminPanel /></ProtectedRoute>
+        <AdminRoute><AdminPanel /></AdminRoute>
       </Route>
 
       <Route component={NotFound} />
