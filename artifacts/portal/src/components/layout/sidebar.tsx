@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -57,7 +57,6 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 
       setCheckoutId(data.checkoutRequestId);
 
-      // Poll for activation status
       pollRef.current = setInterval(async () => {
         const sr = await fetch(`${API_BASE}/api/activate/status/${data.checkoutRequestId}`, {
           headers: getAuthHeaders(),
@@ -66,7 +65,6 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
         if (sd.status === "completed") {
           stopPoll();
           setStep("done");
-          // Refresh user data
           qc.invalidateQueries({ queryKey: ["me"] });
           qc.invalidateQueries({ queryKey: ["getMe"] });
         } else if (sd.status === "failed") {
@@ -92,7 +90,7 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) handleClose(); }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md mx-4">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-green-600" /> Activate Your Account
@@ -122,7 +120,6 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
           </div>
         ) : (
           <div className="space-y-5 py-2">
-            {/* Plan selector */}
             <div className="grid grid-cols-2 gap-3">
               {(["monthly", "yearly"] as const).map(p => (
                 <button
@@ -176,11 +173,35 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
+function NavContent({ location, onNav }: { location: string; onNav?: () => void }) {
+  return (
+    <nav className="space-y-1">
+      {NAV_ITEMS.map((item) => {
+        const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
+        const Icon = item.icon;
+        return (
+          <Link key={item.href} href={item.href} onClick={onNav}>
+            <div className={`flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors cursor-pointer ${
+              isActive
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            }`}>
+              <Icon className="w-4 h-4 shrink-0" />
+              <span>{item.label}</span>
+            </div>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function Sidebar({ children }: { children?: ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const [activateOpen, setActivateOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -191,10 +212,15 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const sandboxUsed = (user as any)?.sandboxTransactionsUsed ?? 0;
   const sandboxRemaining = Math.max(0, 2 - sandboxUsed);
 
+  // Close mobile menu on location change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location]);
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sidebar */}
-      <aside className="w-64 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border hidden md:flex shrink-0">
+      {/* ── Desktop Sidebar ── */}
+      <aside className="w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border hidden md:flex shrink-0">
         <div className="h-16 flex items-center px-6 border-b border-sidebar-border/50">
           <div className="flex items-center gap-2">
             <img src="/favicon.png" alt="Nexus Pay" className="w-8 h-8 rounded object-contain" />
@@ -203,27 +229,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </div>
 
         <div className="flex-1 overflow-y-auto py-6 px-4">
-          <nav className="space-y-1">
-            {NAV_ITEMS.map((item) => {
-              const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
-              const Icon = item.icon;
-              return (
-                <Link key={item.href} href={item.href}>
-                  <div className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer ${
-                    isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                  }`}>
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </nav>
+          <NavContent location={location} />
         </div>
 
-        {/* Sandbox Banner */}
         {isSandbox && (
           <div className="mx-4 mb-3 rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2">
             <div className="flex items-center gap-2">
@@ -269,9 +277,108 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* ── Mobile Top Bar ── */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-sidebar text-sidebar-foreground border-b border-sidebar-border/50 h-14 flex items-center justify-between px-4">
+        <div className="flex items-center gap-2">
+          <img src="/favicon.png" alt="Nexus Pay" className="w-7 h-7 rounded object-contain" />
+          <span className="font-bold tracking-tight">Nexus Pay</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isSandbox && (
+            <Badge className="text-xs bg-amber-500 text-white px-2 py-0.5">
+              Sandbox {sandboxRemaining}/2
+            </Badge>
+          )}
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-2 rounded-md hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mobile Drawer ── */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          {/* Drawer panel */}
+          <div className="relative w-72 max-w-[85vw] bg-sidebar text-sidebar-foreground flex flex-col h-full shadow-2xl">
+            {/* Header */}
+            <div className="h-14 flex items-center justify-between px-4 border-b border-sidebar-border/50 shrink-0">
+              <div className="flex items-center gap-2">
+                <img src="/favicon.png" alt="Nexus Pay" className="w-7 h-7 rounded object-contain" />
+                <span className="font-bold">Nexus Pay</span>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 rounded-md hover:bg-sidebar-accent/50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Nav items */}
+            <div className="flex-1 overflow-y-auto py-4 px-3">
+              <NavContent location={location} onNav={() => setMobileMenuOpen(false)} />
+            </div>
+
+            {/* Sandbox banner */}
+            {isSandbox && (
+              <div className="mx-3 mb-3 rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="text-xs font-semibold text-amber-800">Sandbox Mode</span>
+                  <Badge className="ml-auto text-xs bg-amber-500 hover:bg-amber-600 text-white py-0 px-1.5">
+                    {sandboxRemaining}/2 left
+                  </Badge>
+                </div>
+                <p className="text-xs text-amber-700 leading-snug">
+                  {sandboxRemaining === 0
+                    ? "You've used all sandbox transactions. Activate to continue."
+                    : `${sandboxRemaining} test transaction${sandboxRemaining !== 1 ? "s" : ""} remaining.`}
+                </p>
+                <Button
+                  size="sm"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white h-7 text-xs gap-1"
+                  onClick={() => { setMobileMenuOpen(false); setActivateOpen(true); }}
+                >
+                  <Zap className="w-3 h-3" /> Activate — From KES 100
+                </Button>
+              </div>
+            )}
+
+            {/* User info + logout */}
+            <div className="p-3 border-t border-sidebar-border/50 shrink-0">
+              <div className="mb-3 px-1">
+                <p className="text-sm font-medium truncate">{user?.businessName}</p>
+                <p className="text-xs text-sidebar-foreground/60 truncate">{user?.email}</p>
+                {!isSandbox && (
+                  <Badge className="mt-1 text-xs bg-green-600 hover:bg-green-700 py-0">
+                    Active · {(user as any)?.subscriptionType ?? "plan"}
+                  </Badge>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                onClick={handleLogout}
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Content ── */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pt-[72px] md:pt-8">
           {children}
         </div>
       </main>

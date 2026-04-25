@@ -149,19 +149,19 @@ export default function Dashboard() {
       {walletCollected > 0 && (
         <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-green-600 rounded-xl flex items-center justify-center shrink-0">
                   <Wallet className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <CardTitle className="text-base">Platform Wallet</CardTitle>
-                  <CardDescription>Funds collected by Nexus Pay (no till configured at time of payment)</CardDescription>
+                  <CardDescription className="text-xs">Funds collected by Nexus Pay (no till configured)</CardDescription>
                 </div>
               </div>
               <Button
                 onClick={() => { setWithdrawOpen(true); setWithdrawDone(false); }}
-                className="bg-green-600 hover:bg-green-700 gap-2"
+                className="bg-green-600 hover:bg-green-700 gap-2 self-start sm:self-auto"
                 disabled={walletAvailable < 10}
               >
                 <ArrowDownToLine className="w-4 h-4" />
@@ -170,14 +170,14 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4">
               {[
                 { label: "Available", value: `KES ${walletAvailable.toLocaleString()}`, highlight: true },
                 { label: "Total Collected", value: `KES ${walletCollected.toLocaleString()}` },
                 { label: "Transactions", value: `${wallet?.txCount || 0}` },
               ].map(({ label, value, highlight }) => (
-                <div key={label} className={`rounded-xl p-3 text-center ${highlight ? "bg-green-600 text-white" : "bg-white/70 text-gray-700"}`}>
-                  <div className={`text-xl font-bold ${highlight ? "" : "text-gray-900"}`}>{value}</div>
+                <div key={label} className={`rounded-xl p-2 sm:p-3 text-center ${highlight ? "bg-green-600 text-white" : "bg-white/70 text-gray-700"}`}>
+                  <div className={`text-base sm:text-xl font-bold break-all ${highlight ? "" : "text-gray-900"}`}>{value}</div>
                   <div className={`text-xs mt-0.5 ${highlight ? "text-green-100" : "text-gray-400"}`}>{label}</div>
                 </div>
               ))}

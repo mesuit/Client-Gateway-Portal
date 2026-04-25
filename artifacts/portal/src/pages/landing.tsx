@@ -133,7 +133,7 @@ export default function Landing() {
               <div className="w-3 h-3 rounded-full bg-green-500" />
               <span className="ml-3 text-xs text-gray-400 font-mono">STK Push — one API call</span>
             </div>
-            <pre className="p-6 text-sm text-green-300 font-mono overflow-x-auto leading-relaxed whitespace-pre-wrap">
+            <pre className="p-4 sm:p-6 text-xs sm:text-sm text-green-300 font-mono overflow-x-auto leading-relaxed">
               {CODE_EXAMPLE}
             </pre>
           </div>

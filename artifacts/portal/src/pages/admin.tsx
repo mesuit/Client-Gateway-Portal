@@ -176,7 +176,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Wallet Stats */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card className="border-green-200 bg-green-50">
           <CardContent className="pt-5">
             <div className="flex items-center gap-2 mb-1">
@@ -209,7 +209,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Merchant Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card>
           <CardContent className="pt-5">
             <div className="text-2xl font-bold">{pending.length}</div>
