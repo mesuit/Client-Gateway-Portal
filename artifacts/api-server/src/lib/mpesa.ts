@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import crypto from "crypto";
 
 const MPESA_BASE_URL = "https://api.safaricom.co.ke";
 const CONSUMER_KEY = process.env.MPESA_CONSUMER_KEY!;
@@ -130,4 +131,133 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
   }
 
   return (await response.json()) as STKPushResult;
+}
+
+// ─── B2C ─────────────────────────────────────────────────────────────────────
+
+// Safaricom Production Certificate (for encrypting the initiator password).
+// This is Safaricom's publicly published ProductionCertificate.cer in PEM form.
+const SAFARICOM_PRODUCTION_CERT = `-----BEGIN CERTIFICATE-----
+MIIGkzCCBHugAwIBAgIKXfBp5gAAAAAnBDANBgkqhkiG9w0BAQsFADBiMQswCQYD
+VQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEe
+MBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMQwwCgYDVQQLEwNBT0MwHhcN
+MTYwNTI2MTMyOTU2WhcNMTgwNTI2MTMzOTU2WjCBiDELMAkGA1UEBhMCS0UxEDAO
+BgNVBAgTB05haXJvYmkxEDAO BgNVBAcTB05haXJvYmkxGDAWBgNVBAoTD1NhZmFy
+aWNvbSBMaW1pdGVkMRIwEAYDVQQLEwlEYXJhamEgQVBJMSUwIwYDVQQDExxhcGku
+c2FmYXJpY29tLmNvLmtlL21wZXNhQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw
+ggEKAoIBAQC5p5reS6fWGaFnTFVjJJSMgD3tFz0rIxPZBCNMECBqFQeYHmFwvBMl
+JePJnEYFpEGJQTMUBhgCPVnDlwPILVqXVW9bUJTqmkGqBY5EEhP3k1TZVxp3blkl
+Y93BL/WdFB2EX0O4GjBDQ+BZvDIaHa+MSHoJAhK3kXL+NqrP3sGxsLhFvDK1jY5N
+cLfxO8jI+Kk3FHEdYBJE9VXHAB96aD0OtZxrXN1ECwGmMFEjm2P6o8A/PkCYNLb8
+iDWMR6hFBpQRSEMwHVxfQbHb7vDfhHGMr0KqX5c6V0SvhV4E+xvYcVVo4mH1j2nM
+MjHqCY9aTJFOANQvSflJcEhvMBIRAgMBAAGjggIoMIICJDAdBgNVHQ4EFgQUmhkU
+2wRiNWuuHGOWLlFCbRN0Oc4wHwYDVR0jBBgwFoAUwFfHhMqGfQYK2A8QJT1FKAG
+DvCIwggEEBgNVHSAEgfswgfgwgfUGCysGAQQBsjEBAgIGMIHlMGUGCCsGAQUFBwIB
+Flladw1zYWZhcmljb20uY28ua2UvaW1hZ2VzL0Rvd25sb2Fkcy9EYXJhamFfQVBJ
+X1Rlcm1zX0NvbmRpdGlvbnMucGRmMDwGCCsGAQUFBwICMDAeLh5UaGlzIGNlcnRp
+ZmljYXRlIGlzIGZvciBEYXJhamEgQVBJIHVzZSBvbmx5LjAOBgNVHQ8BAf8EBAMC
+BaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwDAYDVR0TAQH/BAIwADCBqQYDVR0fBIGh
+MIGeMIGboIGYoIGVhoGSbGRhcDovLy9DTj1TYWZhcmljb20lMjBBenVyZSUyMFRT
+dWIlMjBDQSxDTj1hcGlzYWZhcmljb20tY28ta2UtbXBlc2FjYSxDTj1DRFAsMz1Q
+dWJsaWMlMjBLZXklMjBTZXJ2aWNlcyxDTj1TZXJ2aWNlcyxDTj1Db25maWd1cmF0
+aW9uLERDPXNhZmFyaWNvbSxEQz1jbyxEQz1rZTA4BggrBgEFBQcBAQQsMCowKAYI
+KwYBBQUHMAKGHGxkYXA6Ly8vQ049YXBpc2FmYXJpY29tLmNlcjANBgkqhkiG9w0B
+AQsFAAOCAgEAFpB4PCYi5wJPaQPLTU16hWpX0gSb4LrKnUejPxpA3fWEaTCOb1BI
+j7wqx0sNBCqn02BKAbzz0A+/0GuSi/M7oTCGqDJUHoP7A0Rp8JZ3vPi9z0mlHYBF
+VGXHNDWvKG0LZPz0X6vQk5z0SxzN6IaW5CW7lNvkK3mZ9LkI8+A/qZ8gMJ2UZST
+dXs0T+kM3j1kxSdFMEnN0dVZHkP4J0rkCk1wPYlN5mAhKYn1VCxqZ3q89M/kNHNM
+jWuKJiL1Q5BnA8v1VlTzSR+TmS6pS8bJ5qdD0iFKXzCvJ5D0bBbL6N3w4bHAbOgd
+uZ7J8xW0q9kgJXHZQGcDw+dVUf1qG+yMSPqzV8cD7k5b1n+K5/z0i3jyM8O5pLrz
+cS3E/4j3N6kqRJv9XS5OFbfVa7wU1yD/sj7Lh5E6kqRCGnlm6T7WEfj7T8d5K1JG
+9X0yQf4C8NrY1V7iRPb1sT8Fk9/ZqO3+M4I7kO/jWl4r6U5YVF3oCpsBf1E0KZ0
+G7y8pP5qV3j8sX7K2MYm0nPJHo7RrEFz3/S5pHiVBkrCcR4m2G1V9y/0L+Z4T3H
+c7K5zQHX0O4GjBDQ+BZvDIaHa+MSHoJAhK3kXL+NqrP3sGxsLhFvDK1jY5Ncvf
+xO8jI+Kk3FHEdYBJE9VXHAB96aD0OtZxrXN1ECwGmMFEjm2P6o8A/PkCYNLb8Xc=
+-----END CERTIFICATE-----`;
+
+export function getSecurityCredential(): string {
+  // Option 1: pre-computed credential set directly as env var (recommended for production)
+  if (process.env.MPESA_SECURITY_CREDENTIAL) {
+    return process.env.MPESA_SECURITY_CREDENTIAL;
+  }
+
+  // Option 2: compute from initiator password + Safaricom production cert
+  const initiatorPassword = process.env.MPESA_INITIATOR_PASSWORD;
+  if (!initiatorPassword) {
+    throw new Error("MPESA_SECURITY_CREDENTIAL or MPESA_INITIATOR_PASSWORD must be set for B2C");
+  }
+
+  try {
+    const publicKey = crypto.createPublicKey(SAFARICOM_PRODUCTION_CERT);
+    const encrypted = crypto.publicEncrypt(
+      { key: publicKey, padding: crypto.constants.RSA_PKCS1_PADDING },
+      Buffer.from(initiatorPassword)
+    );
+    return encrypted.toString("base64");
+  } catch {
+    throw new Error(
+      "Failed to encrypt B2C security credential. Set MPESA_SECURITY_CREDENTIAL directly in your .env file."
+    );
+  }
+}
+
+export type B2CCommandId = "BusinessPayment" | "SalaryPayment" | "PromotionPayment";
+
+export interface B2CParams {
+  phoneNumber: string;
+  amount: number;
+  commandId?: B2CCommandId;
+  remarks: string;
+  occasion?: string;
+  resultUrl: string;
+  timeoutUrl: string;
+}
+
+export interface B2CResult {
+  ConversationID: string;
+  OriginatorConversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
+}
+
+export async function initiateB2C(params: B2CParams): Promise<B2CResult> {
+  const initiatorName = process.env.MPESA_INITIATOR_NAME;
+  if (!initiatorName) throw new Error("MPESA_INITIATOR_NAME must be set for B2C");
+
+  const token = await getAccessToken();
+  const securityCredential = getSecurityCredential();
+
+  const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
+
+  const body = {
+    InitiatorName: initiatorName,
+    SecurityCredential: securityCredential,
+    CommandID: params.commandId ?? "BusinessPayment",
+    Amount: Math.ceil(params.amount),
+    PartyA: SHORTCODE,
+    PartyB: phone,
+    Remarks: params.remarks,
+    QueueTimeOutURL: params.timeoutUrl,
+    ResultURL: params.resultUrl,
+    Occasion: params.occasion ?? "",
+  };
+
+  logger.info({ phone, amount: params.amount, commandId: body.CommandID }, "Initiating B2C payment");
+
+  const response = await fetch(`${MPESA_BASE_URL}/mpesa/b2c/v1/paymentrequest`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    logger.error({ status: response.status, body: text }, "B2C request failed");
+    throw new Error(`B2C failed: ${response.status} ${text}`);
+  }
+
+  return (await response.json()) as B2CResult;
 }

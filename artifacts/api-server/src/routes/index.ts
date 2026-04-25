@@ -11,6 +11,7 @@ import payRouter from "./pay";
 import walletRouter from "./wallet";
 import adminRouter from "./admin";
 import activationRouter from "./activation";
+import b2cRouter from "./b2c";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(payRouter);
 router.use(walletRouter);
 router.use(adminRouter);
 router.use(activationRouter);
+router.use(b2cRouter);
 
 export default router;

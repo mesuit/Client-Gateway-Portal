@@ -6,3 +6,4 @@ export * from "./sessions";
 export * from "./payment_links";
 export * from "./withdrawal_requests";
 export * from "./activation_payments";
+export * from "./b2c_transactions";

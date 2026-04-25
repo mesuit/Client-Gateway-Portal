@@ -37,6 +37,7 @@ import TestPayment from "@/pages/test-payment";
 import PaymentLinks from "@/pages/payment-links";
 import Pay from "@/pages/pay";
 import AdminPanel from "@/pages/admin";
+import B2C from "@/pages/b2c";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -76,6 +77,9 @@ function Router() {
       </Route>
       <Route path="/test">
         <ProtectedRoute><TestPayment /></ProtectedRoute>
+      </Route>
+      <Route path="/b2c">
+        <ProtectedRoute><B2C /></ProtectedRoute>
       </Route>
       <Route path="/admin">
         <AdminRoute><AdminPanel /></AdminRoute>

@@ -445,9 +445,110 @@ try {
         </div>
       </section>
 
+      {/* ── B2C ─────────────────────────────────────────────────── */}
+      <section className="space-y-4">
+        <h3 className="text-xl font-bold">5. B2C — Send Money to a Phone</h3>
+        <p className="text-muted-foreground text-sm">
+          B2C (Business to Customer) lets you push money from your shortcode directly to any M-Pesa number. Use it for refunds, commissions, salaries, or cashback. Requires <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">MPESA_INITIATOR_NAME</code> and <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">MPESA_SECURITY_CREDENTIAL</code> to be configured on your account.
+        </p>
+
+        <EndpointCard method="POST" path="/api/payments/b2c" description="Send money from your shortcode to a customer's M-Pesa number.">
+          <CodeBlock
+            curl={`curl -X POST ${BASE}/api/payments/b2c \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{
+    "phoneNumber": "254712345678",
+    "amount": 500,
+    "remarks": "Refund for order #123",
+    "commandId": "BusinessPayment"
+  }'`}
+            node={`const res = await fetch('${BASE}/api/payments/b2c', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'YOUR_SECRET_KEY'
+  },
+  body: JSON.stringify({
+    phoneNumber: '254712345678',
+    amount: 500,
+    remarks: 'Refund for order #123',
+    commandId: 'BusinessPayment'   // or SalaryPayment, PromotionPayment
+  })
+});
+
+const data = await res.json();
+// data.conversationId — use to check status`}
+          />
+        </EndpointCard>
+
+        <ParamTable rows={[
+          ["phoneNumber", "string", "Recipient Safaricom number — format 254XXXXXXXXX"],
+          ["amount", "number", "Amount to send in KES (minimum 10)"],
+          ["remarks", "string", "Description of the payment (shown in Safaricom reports)"],
+          ["commandId", "string", "BusinessPayment | SalaryPayment | PromotionPayment (default: BusinessPayment)", false],
+          ["occasion", "string", "Optional occasion or reference label", false],
+        ]} />
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">B2C Initiation Response</div>
+          <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+  "conversationId": "AG_20260425_...",           // use this to check status
+  "originatorConversationId": "29115-...",
+  "responseCode": "0",
+  "responseDescription": "Accept the service request successfully.",
+  "transactionId": 5
+}`}</pre>
+        </div>
+
+        <EndpointCard method="GET" path="/api/payments/b2c/status/:conversationId" description="Check the status of a B2C payment using the conversationId from the initiation response.">
+          <CodeBlock
+            curl={`curl ${BASE}/api/payments/b2c/status/AG_20260425_123456 \\
+  -H "X-API-Key: YOUR_SECRET_KEY"`}
+            node={`const res = await fetch(
+  \`${BASE}/api/payments/b2c/status/\${conversationId}\`,
+  { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
+);
+const data = await res.json();
+// data.status: 'pending' | 'completed' | 'failed'
+if (data.status === 'completed') {
+  console.log('Receipt:', data.mpesaReceiptNumber);
+  console.log('Recipient:', data.receiverPartyPublicName);
+}`}
+          />
+        </EndpointCard>
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">B2C Status Response</div>
+          <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+  "conversationId": "AG_20260425_...",
+  "status": "completed",                         // pending | completed | failed
+  "amount": "500.00",
+  "phoneNumber": "254712345678",
+  "mpesaReceiptNumber": "RCD6ABXXXXX",
+  "receiverPartyPublicName": "254712345678 - John Doe",
+  "commandId": "BusinessPayment",
+  "remarks": "Refund for order #123",
+  "createdAt": "2026-04-25T14:00:00Z",
+  "updatedAt": "2026-04-25T14:01:10Z"
+}`}</pre>
+        </div>
+
+        <EndpointCard method="GET" path="/api/payments/b2c" description="List all B2C transactions for your account." />
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-2">
+          <p className="font-semibold">B2C Result URLs (auto-registered)</p>
+          <p>Safaricom posts results to these URLs automatically — no configuration required on your end:</p>
+          <div className="space-y-1 text-xs font-mono">
+            <div className="flex items-center gap-2"><span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">POST</span>{BASE}/api/payments/b2c/result</div>
+            <div className="flex items-center gap-2"><span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">POST</span>{BASE}/api/payments/b2c/timeout</div>
+          </div>
+        </div>
+      </section>
+
       {/* ── ERROR CODES ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">5. Error Codes</h3>
+        <h3 className="text-xl font-bold">6. Error Codes</h3>
         <div className="border rounded-lg overflow-hidden text-sm">
           <table className="w-full text-left">
             <thead className="bg-gray-50 dark:bg-gray-900 border-b">
