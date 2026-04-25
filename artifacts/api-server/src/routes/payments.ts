@@ -171,6 +171,9 @@ router.post("/payments/callback", async (req, res) => {
 router.get("/payments/status/:checkoutRequestId", requireApiKey, async (req: ApiKeyRequest, res) => {
   const { checkoutRequestId } = req.params;
 
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.removeHeader("ETag");
+
   const txs = await db
     .select()
     .from(transactionsTable)
