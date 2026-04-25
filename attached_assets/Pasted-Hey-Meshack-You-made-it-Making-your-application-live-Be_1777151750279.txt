@@ -1,0 +1,58 @@
+Hey Meshack,
+You made it! Making your application live. Below is a list of the URLs your production app will be calling.
+
+Reversal
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:Reversal - https://api.safaricom.co.ke/mpesa/reversal/v1/request
+C2B v2
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:C2B_v2 - https://api.safaricom.co.ke/mpesa/c2b/v2/registerurl
+Proxy:TransactionStatus - https://api.safaricom.co.ke/mpesa/transactionstatus/v1/query
+C2B PayBill
+The URLs for this product are as follows:
+Proxy:C2B_v1 - https://api.safaricom.co.ke/mpesa/c2b/v1/registerurl
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:TransactionStatus - https://api.safaricom.co.ke/mpesa/transactionstatus/v1/query
+TransactionStatus
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:TransactionStatus - https://api.safaricom.co.ke/mpesa/transactionstatus/v1/query
+AccountBalance
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:AccountBalance - https://api.safaricom.co.ke/mpesa/accountbalance/v1/query
+B2C
+The URLs for this product are as follows:
+Proxy:B2C - https://api.safaricom.co.ke/mpesa/b2c/v1/paymentrequest
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:TransactionStatus - https://api.safaricom.co.ke/mpesa/transactionstatus/v1/query
+Proxy:AccountBalance - https://api.safaricom.co.ke/mpesa/accountbalance/v1/query
+M-PESA EXPRESS (Lipa na Mpesa Production)
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:STKPush - https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest
+Proxy:STKPushQuery - https://api.safaricom.co.ke/mpesa/stkpushquery/v1/query
+B2B
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:BusinessBuyGoods - https://api.safaricom.co.ke/mpesa/b2b/v1/paymentrequest
+Proxy:BusinessPayBill - https://api.safaricom.co.ke/mpesa/b2b/v1/paymentrequest
+Proxy:B2CAccountTopUp - https://api.safaricom.co.ke/mpesa/b2b/v1/paymentrequest
+Dynamic QRCode
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:Dynamic QRCode - https://api.safaricom.co.ke/mpesa/qrcode/v1/generate
+Bill Manager Generic API
+The URLs for this product are as follows:
+Proxy:OAuth2Token - https://api.safaricom.co.ke/oauth/v1/generate
+Proxy:Opt-In - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/optin
+Proxy:Single-Invoicing - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/single-invoicing
+Proxy:Bulk-Invoicing - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/bulk-invoicing
+Proxy:Reconciliation - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/reconciliation
+Proxy:Cancel-Single-Invoicing - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/cancel-single-invoice
+Proxy:Cancel-Bulk-Invoicing - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/cancel-bulk-invoice
+Proxy:Update-Onboarding-Details - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/change-optin-details
+Proxy:Update-Single-Invoicing - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/change-invoice
+Proxy:Update-Bulk-Invoicing - https://api.safaricom.co.ke/v1/billmanager-invoice/v1/billmanager-invoice/change-invoices
