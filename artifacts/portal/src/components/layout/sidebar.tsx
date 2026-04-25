@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { href: "/api-keys", label: "API Keys", icon: KeyRound },
   { href: "/settlement", label: "Settlement", icon: Building2 },
   { href: "/payment-links", label: "Payment Links", icon: Link2 },
-  { href: "/b2c", label: "B2C Payments", icon: ArrowUpRight },
+  { href: "/b2c", label: "B2C Payments", icon: ArrowUpRight, tag: "Soon" },
   { href: "/test", label: "STK Push Tester", icon: Smartphone },
   { href: "/docs", label: "Documentation", icon: BookOpen },
 ];
@@ -188,7 +188,12 @@ function NavContent({ location, onNav }: { location: string; onNav?: () => void 
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
             }`}>
               <Icon className="w-4 h-4 shrink-0" />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {"tag" in item && item.tag && (
+                <Badge className="text-[10px] px-1.5 py-0 h-4 bg-yellow-100 text-yellow-700 border-yellow-200 font-medium">
+                  {item.tag}
+                </Badge>
+              )}
             </div>
           </Link>
         );
