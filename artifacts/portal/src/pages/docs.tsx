@@ -447,7 +447,10 @@ try {
 
       {/* ── B2C ─────────────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">5. B2C — Send Money to a Phone</h3>
+        <h3 className="text-xl font-bold flex items-center gap-3">
+          5. B2C — Send Money to a Phone
+          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-xs px-2 py-0.5 font-medium">Coming Soon</Badge>
+        </h3>
         <p className="text-muted-foreground text-sm">
           B2C (Business to Customer) lets you push money from your shortcode directly to any M-Pesa number. Use it for refunds, commissions, salaries, or cashback. Requires <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">MPESA_INITIATOR_NAME</code> and <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">MPESA_SECURITY_CREDENTIAL</code> to be configured on your account.
         </p>
