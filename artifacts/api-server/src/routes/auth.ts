@@ -6,6 +6,32 @@ import { hashPassword, verifyPassword, createSession, requireAuth, invalidateSes
 
 const router = Router();
 
+function safeUser(user: typeof usersTable.$inferSelect) {
+  const now = new Date();
+  let effectiveMode = user.mode;
+  // Monthly subscription expiry check
+  if (user.mode === "active" && user.subscriptionType === "monthly" && user.subscriptionExpiresAt) {
+    if (new Date(user.subscriptionExpiresAt) < now) effectiveMode = "sandbox";
+  }
+  // Yearly subscription expiry check
+  if (user.mode === "active" && user.subscriptionType === "yearly" && user.subscriptionExpiresAt) {
+    if (new Date(user.subscriptionExpiresAt) < now) effectiveMode = "sandbox";
+  }
+  return {
+    id: user.id,
+    email: user.email,
+    businessName: user.businessName,
+    isActive: user.isActive,
+    isAdmin: user.isAdmin,
+    mode: effectiveMode,
+    sandboxTransactionsUsed: user.sandboxTransactionsUsed,
+    subscriptionType: user.subscriptionType,
+    subscriptionExpiresAt: user.subscriptionExpiresAt,
+    activatedAt: user.activatedAt,
+    createdAt: user.createdAt,
+  };
+}
+
 router.post("/auth/register", async (req, res) => {
   const { email, password, businessName } = req.body;
 
@@ -29,20 +55,12 @@ router.post("/auth/register", async (req, res) => {
     email: email.toLowerCase(),
     passwordHash,
     businessName,
+    mode: "sandbox",
+    sandboxTransactionsUsed: 0,
   }).returning();
 
   const token = await createSession(user.id);
-
-  res.status(201).json({
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      businessName: user.businessName,
-      isActive: user.isActive,
-      createdAt: user.createdAt,
-    },
-  });
+  res.status(201).json({ token, user: safeUser(user) });
 });
 
 router.post("/auth/login", async (req, res) => {
@@ -71,17 +89,7 @@ router.post("/auth/login", async (req, res) => {
   }
 
   const token = await createSession(user.id);
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      businessName: user.businessName,
-      isActive: user.isActive,
-      createdAt: user.createdAt,
-    },
-  });
+  res.json({ token, user: safeUser(user) });
 });
 
 router.post("/auth/logout", requireAuth, async (req: AuthRequest, res) => {
@@ -98,14 +106,7 @@ router.get("/auth/me", requireAuth, async (req: AuthRequest, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: "User not found" });
     return;
   }
-  const user = users[0];
-  res.json({
-    id: user.id,
-    email: user.email,
-    businessName: user.businessName,
-    isActive: user.isActive,
-    createdAt: user.createdAt,
-  });
+  res.json(safeUser(users[0]));
 });
 
 export default router;

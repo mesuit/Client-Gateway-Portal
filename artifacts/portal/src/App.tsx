@@ -18,6 +18,7 @@ import Docs from "@/pages/docs";
 import TestPayment from "@/pages/test-payment";
 import PaymentLinks from "@/pages/payment-links";
 import Pay from "@/pages/pay";
+import AdminPanel from "@/pages/admin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,6 +58,9 @@ function Router() {
       </Route>
       <Route path="/test">
         <ProtectedRoute><TestPayment /></ProtectedRoute>
+      </Route>
+      <Route path="/admin">
+        <ProtectedRoute><AdminPanel /></ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />

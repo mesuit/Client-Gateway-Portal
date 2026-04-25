@@ -5,3 +5,4 @@ export * from "./transactions";
 export * from "./sessions";
 export * from "./payment_links";
 export * from "./withdrawal_requests";
+export * from "./activation_payments";

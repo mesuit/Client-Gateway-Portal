@@ -1,14 +1,17 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { transactionsTable, settlementAccountsTable, apiKeysTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { transactionsTable, settlementAccountsTable, apiKeysTable, usersTable } from "@workspace/db";
+import { eq, and, count } from "drizzle-orm";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
 const router = Router();
 
+const SANDBOX_LIMIT = 2;
+
 router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) => {
+  const userId = req.apiKeyUserId!;
   const { phoneNumber, amount, accountReference, transactionDesc, settlementAccountId } = req.body;
 
   if (!phoneNumber || !amount || !accountReference || !transactionDesc) {
@@ -21,7 +24,34 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
     return;
   }
 
-  // Resolve settlement account: use specified one or fall back to merchant's default
+  // Fetch user and check sandbox/subscription status
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) {
+    res.status(403).json({ error: "USER_NOT_FOUND", message: "Account not found" });
+    return;
+  }
+
+  // Check if monthly subscription has expired → revert to sandbox
+  const now = new Date();
+  let effectiveMode = user.mode;
+  if (user.mode === "active" && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < now) {
+    effectiveMode = "sandbox";
+    // Revert in DB
+    await db.update(usersTable).set({ mode: "sandbox", subscriptionType: null }).where(eq(usersTable.id, userId));
+  }
+
+  if (effectiveMode === "sandbox") {
+    if (user.sandboxTransactionsUsed >= SANDBOX_LIMIT) {
+      res.status(403).json({
+        error: "SANDBOX_LIMIT_REACHED",
+        message: `You have used ${SANDBOX_LIMIT} sandbox transactions. Please activate your account to continue.`,
+        activationRequired: true,
+      });
+      return;
+    }
+  }
+
+  // Resolve settlement account
   let resolvedSettlement: { id: number; accountNumber: string; accountType: string } | null = null;
 
   if (settlementAccountId) {
@@ -30,7 +60,7 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       .from(settlementAccountsTable)
       .where(and(
         eq(settlementAccountsTable.id, settlementAccountId),
-        eq(settlementAccountsTable.userId, req.apiKeyUserId!),
+        eq(settlementAccountsTable.userId, userId),
         eq(settlementAccountsTable.isActive, true)
       ));
     if (accts.length === 0) {
@@ -43,17 +73,14 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       .select()
       .from(settlementAccountsTable)
       .where(and(
-        eq(settlementAccountsTable.userId, req.apiKeyUserId!),
+        eq(settlementAccountsTable.userId, userId),
         eq(settlementAccountsTable.isDefault, true),
         eq(settlementAccountsTable.isActive, true)
       ));
     if (defaults.length > 0) resolvedSettlement = defaults[0];
   }
 
-  // Build callback URL reliably using env var or domain detection
   const callbackUrl = `${getCallbackBaseUrl(req)}/api/payments/callback`;
-
-  // If the merchant's settlement is a till, route money directly to their till (BuyGoods)
   const merchantTill = resolvedSettlement?.accountType === "till"
     ? resolvedSettlement.accountNumber
     : undefined;
@@ -69,7 +96,7 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
     });
 
     const [tx] = await db.insert(transactionsTable).values({
-      userId: req.apiKeyUserId!,
+      userId,
       settlementAccountId: resolvedSettlement?.id ?? null,
       checkoutRequestId: result.CheckoutRequestID,
       merchantRequestId: result.MerchantRequestID,
@@ -80,6 +107,14 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       transactionDesc,
     }).returning();
 
+    // Increment sandbox usage counter
+    if (effectiveMode === "sandbox") {
+      await db
+        .update(usersTable)
+        .set({ sandboxTransactionsUsed: user.sandboxTransactionsUsed + 1 })
+        .where(eq(usersTable.id, userId));
+    }
+
     res.json({
       checkoutRequestId: result.CheckoutRequestID,
       merchantRequestId: result.MerchantRequestID,
@@ -87,6 +122,8 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       responseDescription: result.ResponseDescription,
       customerMessage: result.CustomerMessage,
       transactionId: tx.id,
+      sandboxMode: effectiveMode === "sandbox",
+      sandboxTransactionsRemaining: effectiveMode === "sandbox" ? SANDBOX_LIMIT - user.sandboxTransactionsUsed - 1 : null,
     });
   } catch (err) {
     logger.error(err, "STK Push failed");
@@ -121,13 +158,7 @@ router.post("/payments/callback", async (req, res) => {
 
     await db
       .update(transactionsTable)
-      .set({
-        status,
-        statusCode: String(resultCode),
-        statusDescription: resultDesc,
-        mpesaReceiptNumber,
-        callbackMetadata,
-      })
+      .set({ status, statusCode: String(resultCode), statusDescription: resultDesc, mpesaReceiptNumber, callbackMetadata })
       .where(eq(transactionsTable.checkoutRequestId, checkoutRequestId));
 
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });

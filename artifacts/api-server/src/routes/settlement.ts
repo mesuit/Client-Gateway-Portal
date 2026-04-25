@@ -15,7 +15,7 @@ router.get("/settlement", requireAuth, async (req: AuthRequest, res) => {
 });
 
 router.post("/settlement", requireAuth, async (req: AuthRequest, res) => {
-  const { accountType, accountNumber, accountName, isDefault } = req.body;
+  const { accountType, accountNumber, accountName } = req.body;
 
   if (!accountType || !accountNumber || !accountName) {
     res.status(400).json({ error: "VALIDATION_ERROR", message: "accountType, accountNumber and accountName are required" });
@@ -26,19 +26,18 @@ router.post("/settlement", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  if (isDefault) {
-    await db
-      .update(settlementAccountsTable)
-      .set({ isDefault: false })
-      .where(eq(settlementAccountsTable.userId, req.userId!));
-  }
+  // Always unset existing defaults and set new one as default automatically
+  await db
+    .update(settlementAccountsTable)
+    .set({ isDefault: false })
+    .where(eq(settlementAccountsTable.userId, req.userId!));
 
   const [account] = await db.insert(settlementAccountsTable).values({
     userId: req.userId!,
     accountType,
     accountNumber,
     accountName,
-    isDefault: isDefault ?? false,
+    isDefault: true, // always default when added
   }).returning();
 
   res.status(201).json(account);

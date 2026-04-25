@@ -91,6 +91,39 @@ export default function Docs() {
         <p className="text-muted-foreground mt-1">Integrate Makamesco Nexus Pay M-Pesa payments into your application.</p>
       </div>
 
+      {/* Sandbox Mode Notice */}
+      <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-sm text-purple-900 space-y-3">
+        <p className="font-bold text-base flex items-center gap-2">🧪 Sandbox Mode</p>
+        <p>All new accounts start in <strong>Sandbox Mode</strong>. You get <strong>2 free test transactions</strong> to verify your integration with live M-Pesa. The STK Push is real — use a small amount like <code className="bg-purple-100 px-1 rounded">KES 1</code> to test.</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className="bg-white rounded-lg border border-purple-100 p-3 space-y-1">
+            <p className="font-semibold">Sandbox Response</p>
+            <p className="text-purple-700 text-xs">When in sandbox, responses include:</p>
+            <pre className="text-xs bg-purple-950 text-purple-200 rounded p-2 mt-1 overflow-x-auto">{`{
+  "sandboxMode": true,
+  "sandboxTransactionsRemaining": 1,
+  ...
+}`}</pre>
+          </div>
+          <div className="bg-white rounded-lg border border-purple-100 p-3 space-y-1">
+            <p className="font-semibold">After 2 transactions</p>
+            <p className="text-purple-700 text-xs">Further calls return a 403 error:</p>
+            <pre className="text-xs bg-purple-950 text-purple-200 rounded p-2 mt-1 overflow-x-auto">{`{
+  "error": "SANDBOX_LIMIT_REACHED",
+  "activationRequired": true
+}`}</pre>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg border border-purple-100 p-3">
+          <p className="font-semibold mb-2">Activation Plans</p>
+          <div className="grid sm:grid-cols-2 gap-2 text-xs">
+            <div className="flex items-center gap-2"><span className="w-2 h-2 bg-green-500 rounded-full" /><strong>Monthly — KES 100</strong>: Renews every 30 days. No transaction fees.</div>
+            <div className="flex items-center gap-2"><span className="w-2 h-2 bg-blue-500 rounded-full" /><strong>Yearly — KES 500</strong>: One-time payment. Full year access. Best value.</div>
+          </div>
+          <p className="text-xs text-purple-700 mt-2">Click <strong>Activate</strong> in the sidebar to pay via M-Pesa STK Push. Account is activated automatically upon payment.</p>
+        </div>
+      </div>
+
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
         <p className="font-semibold">Authentication</p>
         <p>All merchant API calls require an <code className="bg-amber-100 px-1 rounded">X-API-Key</code> header with your Secret Key. Generate API keys from the <strong>API Keys</strong> section. Never expose secret keys in client-side code.</p>

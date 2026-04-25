@@ -57,9 +57,7 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-green-600 rounded-xl flex items-center justify-center">
-              <span className="text-white font-black text-lg leading-none">N</span>
-            </div>
+            <img src="/favicon.png" alt="Nexus Pay" className="w-9 h-9 rounded-xl object-cover" />
             <div>
               <span className="font-bold text-gray-900">Nexus Pay</span>
               <span className="hidden sm:inline text-xs text-gray-400 ml-1">by Makamesco</span>
@@ -213,9 +211,7 @@ export default function Landing() {
       <footer className="py-10 px-6 border-t border-gray-100 bg-white">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-green-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-black text-sm">N</span>
-            </div>
+            <img src="/favicon.png" alt="Nexus Pay" className="w-7 h-7 rounded-lg object-cover" />
             <span>Nexus Pay · Makamesco Tech</span>
           </div>
           <div className="flex gap-6">
