@@ -126,6 +126,23 @@ export default function AdminPanel() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const revokeMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const r = await fetch(`${API_BASE}/api/admin/users/${userId}/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "User returned to sandbox" });
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const pending = withdrawals?.filter(w => w.status === "pending") ?? [];
   const processed = withdrawals?.filter(w => w.status !== "pending") ?? [];
 
@@ -250,7 +267,7 @@ export default function AdminPanel() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {u.mode === "sandbox" && (
+                    {u.mode === "sandbox" ? (
                       <div className="flex gap-1">
                         <Button
                           size="sm"
@@ -270,6 +287,16 @@ export default function AdminPanel() {
                           Activate Yearly
                         </Button>
                       </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="text-xs"
+                        onClick={() => revokeMutation.mutate(u.id)}
+                        disabled={revokeMutation.isPending}
+                      >
+                        Revoke to Sandbox
+                      </Button>
                     )}
                     <button onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)} className="p-1 text-muted-foreground">
                       {expandedUser === u.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

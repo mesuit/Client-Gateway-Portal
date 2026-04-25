@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, ShieldCheck, Zap, CheckCircle2, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useLogout } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -207,25 +207,13 @@ export function Sidebar({ children }: { children?: ReactNode }) {
       <aside className="w-64 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border hidden md:flex shrink-0">
         <div className="h-16 flex items-center px-6 border-b border-sidebar-border/50">
           <div className="flex items-center gap-2">
-            <img src="/favicon.png" alt="Nexus Pay" className="w-8 h-8 rounded object-cover" />
+            <img src="/favicon.png" alt="Nexus Pay" className="w-8 h-8 rounded object-contain" />
             <span className="font-bold text-lg tracking-tight">Nexus Pay</span>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto py-6 px-4">
           <nav className="space-y-1">
-            {(user as any)?.isAdmin && (
-              <Link href="/admin">
-                <div className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer mb-1 ${
-                  location === "/admin"
-                    ? "bg-purple-600 text-white font-medium"
-                    : "text-purple-400 hover:bg-purple-600/20 hover:text-purple-300"
-                }`}>
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Admin Panel</span>
-                </div>
-              </Link>
-            )}
             {NAV_ITEMS.map((item) => {
               const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
               const Icon = item.icon;

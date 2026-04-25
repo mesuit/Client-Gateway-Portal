@@ -74,6 +74,22 @@ router.get("/admin/users/:id", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
+// POST /admin/users/:id/revoke — revoke active status, return to sandbox
+router.post("/admin/users/:id/revoke", requireAuth, requireAdmin, async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid user ID" }); return; }
+
+  await db.update(usersTable).set({
+    mode: "sandbox",
+    subscriptionType: null,
+    subscriptionExpiresAt: null,
+    activatedAt: null,
+    sandboxTransactionsUsed: 0,
+  }).where(eq(usersTable.id, userId));
+
+  res.json({ message: "User revoked to sandbox" });
+});
+
 // POST /admin/users/:id/activate — manually activate a user
 router.post("/admin/users/:id/activate", requireAuth, requireAdmin, async (req, res) => {
   const userId = parseInt(req.params.id);

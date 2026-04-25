@@ -57,7 +57,7 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <img src="/favicon.png" alt="Nexus Pay" className="w-9 h-9 rounded-xl object-cover" />
+            <img src="/favicon.png" alt="Nexus Pay" className="w-9 h-9 rounded-xl object-contain" />
             <div>
               <span className="font-bold text-gray-900">Nexus Pay</span>
               <span className="hidden sm:inline text-xs text-gray-400 ml-1">by Makamesco</span>

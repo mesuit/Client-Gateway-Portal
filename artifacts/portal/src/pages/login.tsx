@@ -27,11 +27,13 @@ export default function Login() {
   
   const loginMutation = useLogin();
   
+  const { user } = useAuth();
+
   useEffect(() => {
     if (isAuthenticated) {
-      setLocation("/dashboard");
+      setLocation((user as any)?.isAdmin ? "/admin" : "/dashboard");
     }
-  }, [isAuthenticated, setLocation]);
+  }, [isAuthenticated, setLocation, user]);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -48,7 +50,7 @@ export default function Login() {
         onSuccess: (data) => {
           login(data.token, data.user);
           toast({ title: "Welcome back", description: "Successfully logged in." });
-          setLocation("/dashboard");
+          setLocation((data.user as any)?.isAdmin ? "/admin" : "/dashboard");
         },
         onError: (error) => {
           toast({ 
