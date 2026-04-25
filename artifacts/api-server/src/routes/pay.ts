@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { paymentLinksTable, transactionsTable, settlementAccountsTable } from "@workspace/db";
+import { paymentLinksTable, transactionsTable, settlementAccountsTable, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
+
+const SANDBOX_LIMIT = 2;
 
 const router = Router();
 
@@ -95,6 +97,30 @@ router.post("/pay/:slug", async (req, res) => {
     return;
   }
 
+  // Check merchant sandbox/subscription status
+  const [merchant] = await db.select().from(usersTable).where(eq(usersTable.id, link.userId));
+  if (!merchant) {
+    res.status(404).json({ error: "MERCHANT_NOT_FOUND", message: "Merchant account not found" });
+    return;
+  }
+
+  const now = new Date();
+  let effectiveMode = merchant.mode;
+  if (merchant.mode === "active" && merchant.subscriptionExpiresAt && new Date(merchant.subscriptionExpiresAt) < now) {
+    effectiveMode = "sandbox";
+    await db.update(usersTable).set({ mode: "sandbox", subscriptionType: null }).where(eq(usersTable.id, link.userId));
+  }
+
+  if (effectiveMode === "sandbox") {
+    if (merchant.sandboxTransactionsUsed >= SANDBOX_LIMIT) {
+      res.status(403).json({
+        error: "MERCHANT_NOT_ACTIVATED",
+        message: "This merchant has not activated their account. Payments are currently unavailable.",
+      });
+      return;
+    }
+  }
+
   // Look up merchant's default settlement account
   let settlementAccountId: number | null = null;
   let merchantTill: string | undefined = undefined;
@@ -139,6 +165,13 @@ router.post("/pay/:slug", async (req, res) => {
       accountReference: link.accountReference,
       transactionDesc: link.transactionDesc,
     }).returning();
+
+    // Increment sandbox usage counter if in sandbox mode
+    if (effectiveMode === "sandbox") {
+      await db.update(usersTable)
+        .set({ sandboxTransactionsUsed: merchant.sandboxTransactionsUsed + 1 })
+        .where(eq(usersTable.id, link.userId));
+    }
 
     res.json({
       checkoutRequestId: result.CheckoutRequestID,

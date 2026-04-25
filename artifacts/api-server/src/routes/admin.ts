@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { usersTable, settlementAccountsTable, transactionsTable, withdrawalRequestsTable } from "@workspace/db";
-import { eq, count, sql } from "drizzle-orm";
+import { eq, count, sql, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
 const router = Router();
@@ -15,6 +15,38 @@ async function requireAdmin(req: AuthRequest, res: any, next: any) {
   }
   next();
 }
+
+// GET /admin/stats — platform-wide totals
+router.get("/admin/stats", requireAuth, requireAdmin, async (req, res) => {
+  const [txStats] = await db.select({
+    totalTransactions: sql<number>`COUNT(*)`,
+    completedTransactions: sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
+    totalVolume: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN amount::numeric ELSE 0 END), 0)::text`,
+  }).from(transactionsTable);
+
+  // Platform wallet = completed transactions with no settlement account (money collected by platform)
+  const [walletStats] = await db.select({
+    walletBalance: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN amount::numeric ELSE 0 END), 0)::text`,
+    walletTxCount: sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
+  }).from(transactionsTable).where(isNull(transactionsTable.settlementAccountId));
+
+  const [withdrawn] = await db.select({
+    totalWithdrawn: sql<string>`COALESCE(SUM(amount::numeric) FILTER (WHERE status IN ('pending', 'processing', 'completed')), 0)::text`,
+  }).from(withdrawalRequestsTable);
+
+  const walletBalance = Number(walletStats.walletBalance);
+  const totalWithdrawn = Number(withdrawn.totalWithdrawn);
+
+  res.json({
+    totalTransactions: Number(txStats.totalTransactions),
+    completedTransactions: Number(txStats.completedTransactions),
+    totalVolume: txStats.totalVolume,
+    walletBalance: walletStats.walletBalance,
+    walletAvailable: String(Math.max(0, walletBalance - totalWithdrawn)),
+    walletTxCount: Number(walletStats.walletTxCount),
+    totalWithdrawn: withdrawn.totalWithdrawn,
+  });
+});
 
 // GET /admin/users — list all users
 router.get("/admin/users", requireAuth, requireAdmin, async (req, res) => {

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Users, Wallet, CheckCircle2, XCircle, ChevronDown, ChevronUp, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, ShieldCheck, TrendingUp, Wallet, BarChart3 } from "lucide-react";
 import { format } from "date-fns";
 import { getAuthHeaders } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +59,23 @@ export default function AdminPanel() {
   const [detailId, setDetailId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
+
+  const { data: stats } = useQuery<{
+    totalTransactions: number;
+    completedTransactions: number;
+    totalVolume: string;
+    walletBalance: string;
+    walletAvailable: string;
+    walletTxCount: number;
+    totalWithdrawn: string;
+  }>({
+    queryKey: ["admin-stats"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/stats`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+  });
 
   const { data: withdrawals, isLoading: wLoading } = useQuery<Withdrawal[]>({
     queryKey: ["admin-withdrawals"],
@@ -158,22 +175,55 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Wallet Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="border-green-200 bg-green-50">
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Wallet className="w-4 h-4 text-green-700" />
+              <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">Platform Wallet</span>
+            </div>
+            <div className="text-3xl font-bold text-green-800">
+              KES {Number(stats?.walletBalance ?? 0).toLocaleString()}
+            </div>
+            <p className="text-xs text-green-700 mt-1">
+              Available: KES {Number(stats?.walletAvailable ?? 0).toLocaleString()} · Withdrawn: KES {Number(stats?.totalWithdrawn ?? 0).toLocaleString()}
+            </p>
+            <p className="text-xs text-green-600 mt-0.5">{stats?.walletTxCount ?? 0} platform-collected transactions</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">All Transactions</span>
+            </div>
+            <div className="text-3xl font-bold">{stats?.completedTransactions ?? 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Total volume: KES {Number(stats?.totalVolume ?? 0).toLocaleString()}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">{stats?.totalTransactions ?? 0} total incl. pending/failed</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Merchant Stats */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="pt-5">
             <div className="text-2xl font-bold">{pending.length}</div>
             <p className="text-sm text-muted-foreground mt-1">Pending Withdrawals</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="pt-5">
             <div className="text-2xl font-bold">{users?.length ?? 0}</div>
             <p className="text-sm text-muted-foreground mt-1">Total Merchants</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="pt-5">
             <div className="text-2xl font-bold">{users?.filter(u => u.mode === "active").length ?? 0}</div>
             <p className="text-sm text-muted-foreground mt-1">Active Subscribers</p>
           </CardContent>

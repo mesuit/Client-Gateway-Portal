@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle } from "lucide-react";
-import { useLogout } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -183,18 +182,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const { toast } = useToast();
   const [activateOpen, setActivateOpen] = useState(false);
 
-  const logoutMutation = useLogout();
-
   const handleLogout = () => {
-    logoutMutation.mutate(undefined, {
-      onSuccess: () => {
-        logout();
-        toast({ title: "Logged out successfully" });
-      },
-      onError: () => {
-        logout();
-      }
-    });
+    logout();
+    window.location.href = "/login";
   };
 
   const isSandbox = (user as any)?.mode === "sandbox";
@@ -272,9 +262,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             variant="ghost"
             className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
             onClick={handleLogout}
-            disabled={logoutMutation.isPending}
           >
-            {logoutMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LogOut className="w-4 h-4 mr-2" />}
+            <LogOut className="w-4 h-4 mr-2" />
             Sign Out
           </Button>
         </div>
