@@ -283,8 +283,166 @@ console.log('Share this URL:', shareUrl);`}
       <section className="space-y-4">
         <h3 className="text-xl font-bold">4. Payment Callback (Webhook)</h3>
         <p className="text-muted-foreground text-sm">
-          M-Pesa automatically calls <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono text-xs">{BASE}/api/payments/callback</code> when a payment is completed. You don't need to configure this — the gateway handles it automatically and updates the transaction status. Simply poll the status endpoint after your STK push.
+          When a customer completes or cancels an M-Pesa payment, Safaricom automatically posts the result to the callback URL registered with your shortcode. This gateway handles the callback, verifies the payload, and updates the transaction status in real-time. <strong>You do not need to configure anything</strong> — it works automatically.
         </p>
+
+        {/* Registered Callback URL */}
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-green-800">Registered Daraja Callback URL</p>
+          <p className="text-xs text-green-700 mb-2">This URL is pre-registered with your M-Pesa shortcode in the Daraja portal. Safaricom posts payment results here automatically.</p>
+          <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-4 py-2.5">
+            <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded">POST</span>
+            <code className="text-sm font-mono text-gray-800 break-all">{BASE}/api/payments/callback</code>
+          </div>
+        </div>
+
+        {/* What M-Pesa sends */}
+        <div>
+          <p className="text-sm font-semibold mb-2">M-Pesa Callback Payload (what Safaricom sends)</p>
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium text-xs">Successful payment</div>
+            <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "29115-34620561-1",
+      "CheckoutRequestID": "ws_CO_24042026_12345678",
+      "ResultCode": 0,
+      "ResultDesc": "The service request is processed successfully.",
+      "CallbackMetadata": {
+        "Item": [
+          { "Name": "Amount",              "Value": 100 },
+          { "Name": "MpesaReceiptNumber",  "Value": "RBK71GXXXXX" },
+          { "Name": "TransactionDate",     "Value": 20260424140105 },
+          { "Name": "PhoneNumber",         "Value": 254712345678 }
+        ]
+      }
+    }
+  }
+}`}</pre>
+          </div>
+          <div className="border rounded-lg overflow-hidden text-sm mt-3">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium text-xs">Failed / cancelled payment</div>
+            <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "29115-34620561-1",
+      "CheckoutRequestID": "ws_CO_24042026_12345678",
+      "ResultCode": 1032,
+      "ResultDesc": "Request cancelled by user."
+      // No CallbackMetadata when payment fails
+    }
+  }
+}`}</pre>
+          </div>
+        </div>
+
+        {/* ResultCode table */}
+        <div>
+          <p className="text-sm font-semibold mb-2">M-Pesa ResultCode Reference</p>
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b">
+                <tr>
+                  <th className="px-4 py-3 font-medium">ResultCode</th>
+                  <th className="px-4 py-3 font-medium">Meaning</th>
+                  <th className="px-4 py-3 font-medium">Transaction Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-sm">
+                {[
+                  ["0", "Success — payment completed", "completed"],
+                  ["1032", "Request cancelled by user", "cancelled"],
+                  ["1037", "DS timeout — user didn't respond in time", "failed"],
+                  ["1", "Insufficient funds in the M-Pesa account", "failed"],
+                  ["2001", "Wrong PIN entered", "failed"],
+                  ["17", "Transaction limit reached for the day", "failed"],
+                ].map(([code, meaning, status]) => (
+                  <tr key={code}>
+                    <td className="px-4 py-3 font-mono font-bold">{code}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{meaning}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        status === "completed" ? "bg-green-100 text-green-700" :
+                        status === "cancelled" ? "bg-gray-100 text-gray-600" :
+                        "bg-red-100 text-red-600"
+                      }`}>{status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Recommended verification flow */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-semibold text-blue-800">Recommended Verification Flow</p>
+          <ol className="text-xs text-blue-800 space-y-2 list-none">
+            {[
+              ["1", "Call POST /api/payments/stkpush", "Save the checkoutRequestId from the response."],
+              ["2", "Show 'Waiting for payment' to your user", "The STK Push prompt is now on their phone."],
+              ["3", "Poll GET /api/payments/status/:checkoutRequestId", "Poll every 3–5 seconds. The gateway updates status the moment M-Pesa calls back."],
+              ["4", "Act on status", "completed → fulfil order. failed / cancelled → prompt user to retry."],
+            ].map(([n, title, desc]) => (
+              <li key={n} className="flex gap-3">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{n}</span>
+                <span><strong>{title}</strong> — {desc}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        {/* Server-side example */}
+        <div>
+          <p className="text-sm font-semibold mb-2">Server-side verification example (Node.js)</p>
+          <CodeBlock
+            curl={`# Poll until payment is confirmed (max 60s)
+for i in $(seq 1 12); do
+  STATUS=$(curl -s ${BASE}/api/payments/status/ws_CO_24042026_12345678 \\
+    -H "X-API-Key: YOUR_SECRET_KEY" | jq -r '.status')
+
+  echo "Status: $STATUS"
+
+  if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ] || [ "$STATUS" = "cancelled" ]; then
+    break
+  fi
+  sleep 5
+done`}
+            node={`async function waitForPayment(checkoutRequestId, apiKey, timeoutMs = 60000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const res = await fetch(
+      \`${BASE}/api/payments/status/\${checkoutRequestId}\`,
+      { headers: { 'X-API-Key': apiKey } }
+    );
+    const data = await res.json();
+
+    if (data.status === 'completed') {
+      console.log('Payment confirmed:', data.mpesaReceiptNumber);
+      return data;         // ✅ fulfil the order
+    }
+
+    if (data.status === 'failed' || data.status === 'cancelled') {
+      throw new Error(\`Payment \${data.status}\`);  // ❌ notify user
+    }
+
+    // still pending — wait and retry
+    await new Promise(r => setTimeout(r, 3000));
+  }
+
+  throw new Error('Payment timed out after 60s');
+}
+
+// Usage
+try {
+  const payment = await waitForPayment('ws_CO_...', 'YOUR_SECRET_KEY');
+  await fulfillOrder(payment); // your fulfilment logic
+} catch (err) {
+  console.error(err.message);
+}`}
+          />
+        </div>
       </section>
 
       {/* ── ERROR CODES ─────────────────────────────────────────── */}
