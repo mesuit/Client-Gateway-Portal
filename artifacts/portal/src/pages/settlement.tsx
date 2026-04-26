@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { 
@@ -47,8 +47,12 @@ import {
 
 const addAccountSchema = z.object({
   accountType: z.enum(["till", "paybill"] as const),
+  businessNumber: z.string().optional(),
   accountNumber: z.string().min(5, "Account number is too short").max(20),
   accountName: z.string().min(2, "Account name is required"),
+}).refine(data => data.accountType !== "paybill" || (data.businessNumber && data.businessNumber.length >= 4), {
+  message: "Business number is required for Paybill",
+  path: ["businessNumber"],
 });
 
 export default function Settlement() {
@@ -67,10 +71,13 @@ export default function Settlement() {
     resolver: zodResolver(addAccountSchema),
     defaultValues: { 
       accountType: "till",
+      businessNumber: "",
       accountNumber: "",
       accountName: ""
     },
   });
+
+  const selectedAccountType = useWatch({ control: form.control, name: "accountType" });
 
   const onSubmit = (values: z.infer<typeof addAccountSchema>) => {
     addMutation.mutate(
@@ -183,8 +190,14 @@ export default function Settlement() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  {account.accountType === "paybill" && account.businessNumber && (
+                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
+                      <div className="text-xs text-muted-foreground mb-1">Business Number</div>
+                      <div className="font-mono text-lg font-medium tracking-tight">{account.businessNumber}</div>
+                    </div>
+                  )}
                   <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
-                    <div className="text-xs text-muted-foreground mb-1">Account Number</div>
+                    <div className="text-xs text-muted-foreground mb-1">{account.accountType === "paybill" ? "Account Number" : "Till Number"}</div>
                     <div className="font-mono text-lg font-medium tracking-tight">{account.accountNumber}</div>
                   </div>
                   
@@ -249,15 +262,34 @@ export default function Settlement() {
                   </FormItem>
                 )}
               />
+              {selectedAccountType === "paybill" && (
+                <FormField
+                  control={form.control}
+                  name="businessNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Business Number</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g. 247247" {...field} />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">The Paybill shortcode (e.g. 400200, 247247)</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="accountNumber"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Account Number</FormLabel>
+                    <FormLabel>{selectedAccountType === "paybill" ? "Account Number" : "Till Number"}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. 123456" {...field} />
+                      <Input placeholder={selectedAccountType === "paybill" ? "e.g. 0012345678" : "e.g. 123456"} {...field} />
                     </FormControl>
+                    {selectedAccountType === "paybill" && (
+                      <p className="text-xs text-muted-foreground">The account reference under the business number</p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

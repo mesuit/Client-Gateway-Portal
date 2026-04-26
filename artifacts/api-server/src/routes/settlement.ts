@@ -15,7 +15,7 @@ router.get("/settlement", requireAuth, async (req: AuthRequest, res) => {
 });
 
 router.post("/settlement", requireAuth, async (req: AuthRequest, res) => {
-  const { accountType, accountNumber, accountName } = req.body;
+  const { accountType, accountNumber, businessNumber, accountName } = req.body;
 
   if (!accountType || !accountNumber || !accountName) {
     res.status(400).json({ error: "VALIDATION_ERROR", message: "accountType, accountNumber and accountName are required" });
@@ -23,6 +23,10 @@ router.post("/settlement", requireAuth, async (req: AuthRequest, res) => {
   }
   if (!["till", "paybill"].includes(accountType)) {
     res.status(400).json({ error: "VALIDATION_ERROR", message: "accountType must be 'till' or 'paybill'" });
+    return;
+  }
+  if (accountType === "paybill" && !businessNumber) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "businessNumber is required for Paybill accounts" });
     return;
   }
 
@@ -36,8 +40,9 @@ router.post("/settlement", requireAuth, async (req: AuthRequest, res) => {
     userId: req.userId!,
     accountType,
     accountNumber,
+    businessNumber: accountType === "paybill" ? businessNumber : null,
     accountName,
-    isDefault: true, // always default when added
+    isDefault: true,
   }).returning();
 
   res.status(201).json(account);
@@ -50,7 +55,7 @@ router.put("/settlement/:accountId", requireAuth, async (req: AuthRequest, res) 
     return;
   }
 
-  const { accountType, accountNumber, accountName, isDefault } = req.body;
+  const { accountType, accountNumber, businessNumber, accountName, isDefault } = req.body;
 
   if (!accountType || !accountNumber || !accountName) {
     res.status(400).json({ error: "VALIDATION_ERROR", message: "accountType, accountNumber and accountName are required" });
@@ -58,6 +63,10 @@ router.put("/settlement/:accountId", requireAuth, async (req: AuthRequest, res) 
   }
   if (!["till", "paybill"].includes(accountType)) {
     res.status(400).json({ error: "VALIDATION_ERROR", message: "accountType must be 'till' or 'paybill'" });
+    return;
+  }
+  if (accountType === "paybill" && !businessNumber) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "businessNumber is required for Paybill accounts" });
     return;
   }
 
@@ -70,7 +79,7 @@ router.put("/settlement/:accountId", requireAuth, async (req: AuthRequest, res) 
 
   const rows = await db
     .update(settlementAccountsTable)
-    .set({ accountType, accountNumber, accountName, isDefault: isDefault ?? false })
+    .set({ accountType, accountNumber, businessNumber: accountType === "paybill" ? businessNumber : null, accountName, isDefault: isDefault ?? false })
     .where(and(eq(settlementAccountsTable.id, accountId), eq(settlementAccountsTable.userId, req.userId!)))
     .returning();
 

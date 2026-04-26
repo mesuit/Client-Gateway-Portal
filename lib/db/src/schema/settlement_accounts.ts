@@ -8,6 +8,7 @@ export const settlementAccountsTable = pgTable("settlement_accounts", {
   userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   accountType: text("account_type").notNull(), // "till" | "paybill"
   accountNumber: text("account_number").notNull(),
+  businessNumber: text("business_number"), // paybill only: the paybill shortcode
   accountName: text("account_name").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
