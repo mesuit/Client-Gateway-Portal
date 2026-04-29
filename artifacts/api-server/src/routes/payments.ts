@@ -81,13 +81,16 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
   }
 
   const callbackUrl = `${getCallbackBaseUrl(req)}/api/payments/callback`;
+
+  // Till → CustomerBuyGoodsOnline to the till number (registered under platform head-office).
   const merchantTill = resolvedSettlement?.accountType === "till"
     ? resolvedSettlement.accountNumber
     : undefined;
-  const merchantPaybill = resolvedSettlement?.accountType === "paybill" && resolvedSettlement.businessNumber
-    ? resolvedSettlement.businessNumber
-    : undefined;
-  // For paybill, the accountReference should be the merchant's account number
+
+  // Paybill → CustomerPayBillOnline to PLATFORM shortcode; AccountReference = merchant's
+  // account number (sub-account on the platform's paybill).
+  // Safaricom requires BusinessShortCode == PartyB for PayBill, so we cannot push directly
+  // to a third-party paybill number — money lands in the platform's paybill under that account.
   const effectiveAccountReference = resolvedSettlement?.accountType === "paybill"
     ? resolvedSettlement.accountNumber
     : accountReference;
@@ -100,7 +103,6 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
       transactionDesc,
       callbackUrl,
       merchantTill,
-      merchantPaybill,
     });
 
     const [tx] = await db.insert(transactionsTable).values({

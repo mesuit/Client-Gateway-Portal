@@ -74,10 +74,11 @@ export interface STKPushParams {
   accountReference: string;
   transactionDesc: string;
   callbackUrl: string;
-  /** Merchant's M-Pesa till number. When set, money goes to merchant's till (BuyGoods). */
+  /**
+   * Merchant's M-Pesa till number registered under the platform head-office shortcode.
+   * When set → CustomerBuyGoodsOnline, PartyB = till number.
+   */
   merchantTill?: string;
-  /** Merchant's Paybill business number. When set, money goes to merchant's paybill. */
-  merchantPaybill?: string;
 }
 
 export interface STKPushResult {
@@ -95,15 +96,15 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
 
   const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
 
-  // Route to merchant's till (BuyGoods), merchant's paybill, or platform shortcode.
+  // Route to merchant's till (BuyGoods) or platform shortcode (PayBill / paybill sub-account).
+  // NOTE: CustomerPayBillOnline requires BusinessShortCode == PartyB, so we can only push
+  // to the platform's own shortcode.  Paybill settlement uses AccountReference (sub-account)
+  // to identify the merchant; till uses CustomerBuyGoodsOnline where PartyB = till number.
   let partyB: string;
   let transactionType: string;
   if (params.merchantTill) {
     partyB = params.merchantTill;
     transactionType = "CustomerBuyGoodsOnline";
-  } else if (params.merchantPaybill) {
-    partyB = params.merchantPaybill;
-    transactionType = "CustomerPayBillOnline";
   } else {
     partyB = SHORTCODE;
     transactionType = "CustomerPayBillOnline";
