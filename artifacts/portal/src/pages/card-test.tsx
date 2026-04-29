@@ -9,7 +9,7 @@ import {
   CheckCircle2, Clock, XCircle, Loader2, CreditCard,
 } from "lucide-react";
 
-const API_BASE = "https://pay.makamesco-tech.co.ke";
+const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
 function StatusIcon({ status }: { status: string }) {
   if (status === "completed") return <CheckCircle2 className="w-5 h-5 text-green-600" />;

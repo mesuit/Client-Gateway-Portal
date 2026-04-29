@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
 
-const API_BASE = "https://pay.makamesco-tech.co.ke";
+const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -238,8 +238,7 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 function NavContent({ location, onNav }: { location: string; onNav?: () => void }) {
-  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
-  const visibleItems = isHeistTech ? NAV_ITEMS.filter(i => i.href !== "/card" && i.href !== "/card-test") : NAV_ITEMS;
+  const visibleItems = NAV_ITEMS;
   return (
     <nav className="space-y-1">
       {visibleItems.map((item) => {

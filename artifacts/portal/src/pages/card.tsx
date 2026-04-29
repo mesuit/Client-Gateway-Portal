@@ -13,7 +13,7 @@ import {
   CheckCircle2, Clock, XCircle, Terminal, Code2, FlaskConical,
 } from "lucide-react";
 
-const API_BASE = "https://pay.makamesco-tech.co.ke";
+const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 const PLATFORM_FEE = 10;
 
 function CodeBlock({ curl, node }: { curl: string; node: string }) {
