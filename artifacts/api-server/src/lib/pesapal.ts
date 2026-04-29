@@ -50,6 +50,11 @@ export async function registerIPN(ipnUrl: string): Promise<string> {
 let cachedIpnId: string | null = null;
 
 export async function getOrRegisterIPN(ipnUrl: string): Promise<string> {
+  // Use pre-registered IPN ID from env to avoid calling registration endpoint
+  if (process.env.PESAPAL_IPN_ID) {
+    cachedIpnId = process.env.PESAPAL_IPN_ID;
+    return cachedIpnId;
+  }
   if (cachedIpnId) return cachedIpnId;
   cachedIpnId = await registerIPN(ipnUrl);
   return cachedIpnId;
