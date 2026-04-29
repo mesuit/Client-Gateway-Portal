@@ -91,13 +91,6 @@ interface WithdrawalRequest {
   createdAt: string;
 }
 
-interface ApiKey {
-  id: number;
-  name: string;
-  secretKey: string;
-  prefix: string;
-}
-
 interface TestResult {
   orderTrackingId: string;
   merchantReference: string;
@@ -121,8 +114,7 @@ interface PollResult {
 /* ─── Test Playground ──────────────────────────────────────────── */
 function TestPlayground() {
   const { toast } = useToast();
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [selectedKey, setSelectedKey] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const [amount, setAmount] = useState("100");
   const [description, setDescription] = useState("Test payment");
   const [phone, setPhone] = useState("");
@@ -136,14 +128,6 @@ function TestPlayground() {
   const logRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/keys`, { headers: getAuthHeaders() })
-      .then(r => r.json())
-      .then(d => {
-        const keys = Array.isArray(d) ? d : [];
-        setApiKeys(keys);
-        if (keys.length > 0) setSelectedKey(keys[0].secretKey);
-      })
-      .catch(() => {});
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -196,7 +180,7 @@ function TestPlayground() {
   };
 
   const handleInitiate = async () => {
-    if (!selectedKey) { toast({ title: "No API key found", description: "Generate an API key first.", variant: "destructive" }); return; }
+    if (!apiKey.trim()) { toast({ title: "Paste your API Secret Key first", variant: "destructive" }); return; }
     if (!amount || Number(amount) < 10) { toast({ title: "Amount must be at least KES 10", variant: "destructive" }); return; }
     setInitiating(true);
     setResult(null);
@@ -215,14 +199,14 @@ function TestPlayground() {
 
       const res = await fetch(`${API_BASE}/api/payments/pesapal/initiate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-Key": selectedKey },
+        headers: { "Content-Type": "application/json", "X-API-Key": apiKey.trim() },
         body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? data.message ?? "Failed");
       setResult(data);
       toast({ title: "Payment created", description: "Click 'Open Payment Page' to complete the test payment." });
-      startPolling(data.orderTrackingId, selectedKey);
+      startPolling(data.orderTrackingId, apiKey.trim());
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -231,10 +215,10 @@ function TestPlayground() {
   };
 
   const handleManualPoll = async () => {
-    if (!result || !selectedKey) return;
+    if (!result || !apiKey.trim()) return;
     try {
       const res = await fetch(`${API_BASE}/api/payments/pesapal/status/${result.orderTrackingId}`, {
-        headers: { "X-API-Key": selectedKey },
+        headers: { "X-API-Key": apiKey.trim() },
       });
       const data = await res.json();
       setPollResult(data);
@@ -251,22 +235,17 @@ function TestPlayground() {
         <p>This creates a real PesaPal payment using your account. Use a small amount like <strong>KES 10</strong>. The 10% platform fee applies. After clicking "Open Payment Page", pay with any method — the status below updates automatically.</p>
       </div>
 
-      {/* API Key selector */}
+      {/* API Key input */}
       <div className="space-y-1.5">
-        <Label>API Key to use</Label>
-        {apiKeys.length === 0 ? (
-          <p className="text-sm text-red-600">No API keys found. Generate one from the API Keys section first.</p>
-        ) : (
-          <select
-            className="w-full border rounded-md px-3 py-2 text-sm bg-white"
-            value={selectedKey}
-            onChange={e => setSelectedKey(e.target.value)}
-          >
-            {apiKeys.map(k => (
-              <option key={k.id} value={k.secretKey}>{k.name} ({k.prefix}…)</option>
-            ))}
-          </select>
-        )}
+        <Label>API Secret Key <span className="text-red-500">*</span></Label>
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          placeholder="Paste your secret key from API Keys section"
+          className="font-mono text-sm"
+        />
+        <p className="text-xs text-muted-foreground">Find your secret key under <strong>API Keys</strong> in the sidebar.</p>
       </div>
 
       {/* Form */}
