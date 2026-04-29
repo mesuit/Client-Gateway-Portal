@@ -445,10 +445,151 @@ try {
         </div>
       </section>
 
+      {/* ── CARD & AIRTEL MONEY ─────────────────────────────────── */}
+      <section className="space-y-4">
+        <h3 className="text-xl font-bold flex items-center gap-2">
+          5. Card & Airtel Money (PesaPal)
+        </h3>
+        <p className="text-muted-foreground text-sm">
+          Accept Visa, Mastercard, and Airtel Money payments through PesaPal's hosted checkout. Customers are redirected to a secure PesaPal payment page — no card data ever touches your server.
+          A <strong>10% platform fee</strong> is deducted automatically; the net 90% is credited to your withdrawable balance (visible in the <strong>Card &amp; Airtel Pay</strong> section).
+        </p>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-2">
+          <p className="font-semibold">How it works</p>
+          <ol className="space-y-1.5 list-none">
+            {[
+              ["1", "Call /api/payments/pesapal/initiate", "You get back a redirectUrl."],
+              ["2", "Redirect your customer to redirectUrl", "They pay on PesaPal's hosted page (card, Airtel, etc.)."],
+              ["3", "PesaPal notifies us automatically (IPN)", "No webhook setup needed — we handle it."],
+              ["4", "Poll /api/payments/pesapal/status/:id", "Check when the payment is completed."],
+              ["5", "Net amount credited to your balance", "Withdraw from the Card & Airtel Pay dashboard."],
+            ].map(([n, title, desc]) => (
+              <li key={n} className="flex gap-3">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{n}</span>
+                <span><strong>{title}</strong> — {desc}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <EndpointCard method="POST" path="/api/payments/pesapal/initiate" description="Initiate a card or Airtel Money payment. Returns a hosted redirect URL.">
+          <CodeBlock
+            curl={`curl -X POST ${BASE}/api/payments/pesapal/initiate \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{
+    "amount": 500,
+    "description": "Order #1234",
+    "phone": "0712345678",
+    "email": "customer@example.com",
+    "callbackUrl": "https://yoursite.com/payment/success",
+    "cancellationUrl": "https://yoursite.com/payment/cancel"
+  }'`}
+            node={`const res = await fetch('${BASE}/api/payments/pesapal/initiate', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'YOUR_SECRET_KEY'
+  },
+  body: JSON.stringify({
+    amount: 500,
+    description: 'Order #1234',
+    phone: '0712345678',
+    email: 'customer@example.com',
+    callbackUrl: 'https://yoursite.com/payment/success',
+    cancellationUrl: 'https://yoursite.com/payment/cancel',
+  })
+});
+
+const { redirectUrl, orderTrackingId, netAmount, platformFee } = await res.json();
+// Redirect the customer to complete payment
+window.location.href = redirectUrl;`}
+          />
+        </EndpointCard>
+
+        <ParamTable rows={[
+          ["amount", "number", "Amount to charge in KES (minimum 10)"],
+          ["description", "string", "Payment description shown to the customer"],
+          ["phone", "string", "Customer's phone number (used for Airtel prompt)", false],
+          ["email", "string", "Customer's email address", false],
+          ["callbackUrl", "string", "Redirect URL after successful payment", false],
+          ["cancellationUrl", "string", "Redirect URL if customer cancels", false],
+          ["currency", "string", `Currency code — default "KES"`, false],
+        ]} />
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Response</div>
+          <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+  "orderTrackingId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "merchantReference": "NEXUS-12-1234567890-ABCD",
+  "redirectUrl": "https://pay.pesapal.com/v3/...",   // send customer here
+  "amount": 500,
+  "netAmount": 450,        // 90% credited to your balance
+  "platformFee": 50,       // 10% platform fee
+  "currency": "KES",
+  "transactionId": 7
+}`}</pre>
+        </div>
+
+        <EndpointCard method="GET" path="/api/payments/pesapal/status/:orderTrackingId" description="Check the status of a PesaPal payment.">
+          <CodeBlock
+            curl={`curl ${BASE}/api/payments/pesapal/status/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \\
+  -H "X-API-Key: YOUR_SECRET_KEY"`}
+            node={`const res = await fetch(
+  \`${BASE}/api/payments/pesapal/status/\${orderTrackingId}\`,
+  { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
+);
+
+const { status, amount, netAmount, paymentMethod } = await res.json();
+// status: 'pending' | 'completed' | 'failed' | 'cancelled'
+if (status === 'completed') {
+  console.log('Paid via:', paymentMethod); // e.g. "Airtel Money", "Visa"
+}`}
+          />
+        </EndpointCard>
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Status values</div>
+          <table className="w-full text-left text-sm">
+            <tbody className="divide-y">
+              {[
+                ["pending", "amber", "Awaiting customer payment"],
+                ["completed", "green", "Payment successful — net amount credited to your balance"],
+                ["failed", "red", "Payment was declined or could not be processed"],
+                ["cancelled", "gray", "Customer closed the payment page"],
+              ].map(([s, c, d]) => (
+                <tr key={s}>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      c === "green" ? "bg-green-100 text-green-700" :
+                      c === "amber" ? "bg-amber-100 text-amber-700" :
+                      c === "red" ? "bg-red-100 text-red-600" :
+                      "bg-gray-100 text-gray-600"
+                    }`}>{s}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{d}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800 space-y-1">
+          <p className="font-semibold">Fee structure</p>
+          <p>Customer pays <strong>KES 1,000</strong> → Platform fee: <strong>KES 100 (10%)</strong> → Your net credit: <strong>KES 900</strong>. Withdraw your balance anytime from the <strong>Card &amp; Airtel Pay</strong> page in your dashboard.</p>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          <p className="font-semibold mb-1">⚠ Active accounts only</p>
+          <p>Card and Airtel Money payments are not available in sandbox mode. Activate your account first.</p>
+        </div>
+      </section>
+
       {/* ── B2C ─────────────────────────────────────────────────── */}
       <section className="space-y-4">
         <h3 className="text-xl font-bold flex items-center gap-3">
-          5. B2C — Send Money to a Phone
+          6. B2C — Send Money to a Phone
           <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-xs px-2 py-0.5 font-medium">Coming Soon</Badge>
         </h3>
         <p className="text-muted-foreground text-sm">
