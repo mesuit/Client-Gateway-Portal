@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRoute } from "wouter";
 import { Smartphone, Send, RefreshCw, CheckCircle, XCircle, Clock, AlertCircle } from "lucide-react";
 
-const API_BASE = "https://pay.makamesco-tech.co.ke";
+const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
 interface LinkInfo {
   title: string;

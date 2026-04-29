@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { getAuthHeaders } from "@/hooks/use-auth";
 
-const API_BASE = "https://pay.makamesco-tech.co.ke";
+const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
 interface PaymentLink {
   id: number;

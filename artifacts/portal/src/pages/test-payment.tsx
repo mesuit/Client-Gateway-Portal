@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { getAuthHeaders } from "@/hooks/use-auth";
 
-const API_BASE = "https://pay.makamesco-tech.co.ke";
+const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 const KEY_STORAGE = "nexuspay_test_api_key";
 
 interface ApiKey { id: number; name: string; keyPrefix: string; isActive: boolean; }

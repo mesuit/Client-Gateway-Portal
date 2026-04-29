@@ -40,7 +40,10 @@ const STEPS = [
   { n: "03", title: "Get your API key", desc: "Generate a secret key and start accepting payments immediately." },
 ];
 
-const CODE_EXAMPLE = `curl -X POST https://pay.makamesco-tech.co.ke/api/payments/stkpush \\
+export default function Landing() {
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
+  const CODE_EXAMPLE = `curl -X POST ${origin}/api/payments/stkpush \\
   -H "X-API-Key: sk_live_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -49,9 +52,6 @@ const CODE_EXAMPLE = `curl -X POST https://pay.makamesco-tech.co.ke/api/payments
     "accountReference": "ORDER-001",
     "transactionDesc": "Payment for order"
   }'`;
-
-export default function Landing() {
-  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans">
       {/* Nav */}

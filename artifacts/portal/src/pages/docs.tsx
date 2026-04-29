@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Terminal, Code2 } from "lucide-react";
 
-const BASE = "https://pay.makamesco-tech.co.ke";
+const BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
 function CodeBlock({ curl, node }: { curl: string; node: string }) {
   return (
