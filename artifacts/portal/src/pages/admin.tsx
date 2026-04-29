@@ -116,16 +116,8 @@ export default function AdminPanel() {
       if (!r.ok) throw new Error(json.message);
       return json;
     },
-    onSuccess: (data, { action }) => {
-      if (action === "complete") {
-        if (data.b2cConversationId) {
-          toast({ title: "B2C Settlement Triggered", description: `KES payment initiated → ${data.withdrawal?.phone ?? ""}. ConvID: ${data.b2cConversationId}` });
-        } else {
-          toast({ title: "Marked as complete", description: data.b2cError ? `Note: ${data.b2cError}` : undefined, variant: data.b2cError ? "destructive" : "default" });
-        }
-      } else {
-        toast({ title: "Withdrawal rejected" });
-      }
+    onSuccess: (_, { action }) => {
+      toast({ title: action === "complete" ? "Marked as complete" : "Withdrawal rejected" });
       qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
       setDetailId(null);
       setNote("");
@@ -415,10 +407,6 @@ export default function AdminPanel() {
                 />
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-                Clicking <strong>Complete &amp; Settle</strong> will auto-trigger a B2C M-Pesa payment to the phone above (if B2C credentials are configured), then mark this request as processed.
-              </div>
-
               <DialogFooter className="gap-2">
                 <Button
                   variant="destructive"
@@ -434,7 +422,7 @@ export default function AdminPanel() {
                   disabled={completeMutation.isPending}
                 >
                   {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Complete &amp; Settle
+                  Mark Complete
                 </Button>
               </DialogFooter>
             </div>
