@@ -1,25 +1,30 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { transactionsTable, withdrawalRequestsTable } from "@workspace/db";
+import { transactionsTable, withdrawalRequestsTable, pesapalTransactionsTable } from "@workspace/db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
 const router = Router();
 
-// GET /wallet/balance — platform-collected balance (no settlement account)
-router.get("/wallet/balance", requireAuth, async (req: AuthRequest, res) => {
-  const userId = req.userId!;
-
-  const [result] = await db
+async function getAvailableBalance(userId: number): Promise<{ available: number; mpesaCollected: number; pesapalCollected: number; totalWithdrawn: number }> {
+  // M-Pesa: completed transactions with no settlement account (collected by platform)
+  const [mpesa] = await db
     .select({
       balance: sql<string>`COALESCE(SUM(CASE WHEN ${transactionsTable.status} = 'completed' THEN ${transactionsTable.amount}::numeric ELSE 0 END), 0)::text`,
-      txCount: sql<number>`COUNT(*) FILTER (WHERE ${transactionsTable.status} = 'completed')`,
     })
     .from(transactionsTable)
     .where(and(
       eq(transactionsTable.userId, userId),
       isNull(transactionsTable.settlementAccountId)
     ));
+
+  // PesaPal: net amounts from completed card/Airtel payments (after 10% fee)
+  const [pesapal] = await db
+    .select({
+      balance: sql<string>`COALESCE(SUM(CASE WHEN ${pesapalTransactionsTable.status} = 'completed' THEN ${pesapalTransactionsTable.netAmount}::numeric ELSE 0 END), 0)::text`,
+    })
+    .from(pesapalTransactionsTable)
+    .where(eq(pesapalTransactionsTable.userId, userId));
 
   const [withdrawn] = await db
     .select({
@@ -31,19 +36,31 @@ router.get("/wallet/balance", requireAuth, async (req: AuthRequest, res) => {
       sql`${withdrawalRequestsTable.status} IN ('pending', 'processing', 'completed')`
     ));
 
-  const balance = Number(result.balance);
+  const mpesaCollected = Number(mpesa.balance);
+  const pesapalCollected = Number(pesapal.balance);
+  const totalCollected = mpesaCollected + pesapalCollected;
   const totalWithdrawn = Number(withdrawn.total);
-  const available = Math.max(0, balance - totalWithdrawn);
+  const available = Math.max(0, totalCollected - totalWithdrawn);
+
+  return { available, mpesaCollected, pesapalCollected, totalWithdrawn };
+}
+
+// GET /wallet/balance
+router.get("/wallet/balance", requireAuth, async (req: AuthRequest, res) => {
+  const userId = req.userId!;
+  const { available, mpesaCollected, pesapalCollected, totalWithdrawn } = await getAvailableBalance(userId);
+  const totalCollected = mpesaCollected + pesapalCollected;
 
   res.json({
-    totalCollected: result.balance,
-    totalWithdrawn: withdrawn.total,
+    totalCollected: String(totalCollected),
+    mpesaCollected: String(mpesaCollected),
+    pesapalCollected: String(pesapalCollected),
+    totalWithdrawn: String(totalWithdrawn),
     available: String(available),
-    txCount: Number(result.txCount),
   });
 });
 
-// GET /wallet/withdrawals — list withdrawal requests
+// GET /wallet/withdrawals
 router.get("/wallet/withdrawals", requireAuth, async (req: AuthRequest, res) => {
   const requests = await db
     .select()
@@ -53,7 +70,7 @@ router.get("/wallet/withdrawals", requireAuth, async (req: AuthRequest, res) => 
   res.json(requests);
 });
 
-// POST /wallet/withdraw — request a withdrawal
+// POST /wallet/withdraw
 router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
   const { amount, phone } = req.body;
 
@@ -68,28 +85,7 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  // Check available balance
-  const [result] = await db
-    .select({
-      balance: sql<string>`COALESCE(SUM(CASE WHEN ${transactionsTable.status} = 'completed' THEN ${transactionsTable.amount}::numeric ELSE 0 END), 0)::text`,
-    })
-    .from(transactionsTable)
-    .where(and(
-      eq(transactionsTable.userId, req.userId!),
-      isNull(transactionsTable.settlementAccountId)
-    ));
-
-  const [withdrawn] = await db
-    .select({
-      total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text`,
-    })
-    .from(withdrawalRequestsTable)
-    .where(and(
-      eq(withdrawalRequestsTable.userId, req.userId!),
-      sql`${withdrawalRequestsTable.status} IN ('pending', 'processing', 'completed')`
-    ));
-
-  const available = Math.max(0, Number(result.balance) - Number(withdrawn.total));
+  const { available } = await getAvailableBalance(req.userId!);
 
   if (requestAmount > available) {
     res.status(400).json({

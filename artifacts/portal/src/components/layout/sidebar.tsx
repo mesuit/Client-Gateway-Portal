@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X, ArrowUpRight } from "lucide-react";
+import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X, ArrowUpRight, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { href: "/api-keys", label: "API Keys", icon: KeyRound },
   { href: "/settlement", label: "Settlement", icon: Building2 },
   { href: "/payment-links", label: "Payment Links", icon: Link2 },
+  { href: "/card", label: "Card & Airtel Pay", icon: CreditCard },
   { href: "/b2c", label: "B2C Payments", icon: ArrowUpRight, tag: "Soon" },
   { href: "/test", label: "STK Push Tester", icon: Smartphone },
   { href: "/docs", label: "Documentation", icon: BookOpen },
@@ -236,9 +237,11 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 function NavContent({ location, onNav }: { location: string; onNav?: () => void }) {
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
+  const visibleItems = isHeistTech ? NAV_ITEMS.filter(i => i.href !== "/card") : NAV_ITEMS;
   return (
     <nav className="space-y-1">
-      {NAV_ITEMS.map((item) => {
+      {visibleItems.map((item) => {
         const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
         const Icon = item.icon;
         return (
