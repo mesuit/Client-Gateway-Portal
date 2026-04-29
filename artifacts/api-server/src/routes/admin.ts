@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import { usersTable, settlementAccountsTable, transactionsTable, withdrawalRequestsTable } from "@workspace/db";
 import { eq, count, sql, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
+import { initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -192,22 +194,99 @@ router.get("/admin/withdrawals/:id", requireAuth, requireAdmin, async (req, res)
   res.json({ withdrawal: row, settlements });
 });
 
-// POST /admin/withdrawals/:id/complete — mark as complete
-router.post("/admin/withdrawals/:id/complete", requireAuth, requireAdmin, async (req, res) => {
+// POST /admin/withdrawals/:id/complete — mark as complete and auto-trigger B2C settlement
+router.post("/admin/withdrawals/:id/complete", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid ID" }); return; }
 
   const { note } = req.body;
 
+  const [withdrawal] = await db
+    .select()
+    .from(withdrawalRequestsTable)
+    .where(eq(withdrawalRequestsTable.id, id));
+
+  if (!withdrawal) { res.status(404).json({ error: "NOT_FOUND", message: "Withdrawal not found" }); return; }
+  if (withdrawal.status !== "pending") {
+    res.status(400).json({ error: "ALREADY_PROCESSED", message: `Withdrawal is already ${withdrawal.status}` });
+    return;
+  }
+
+  // Auto-trigger B2C if credentials are configured
+  let b2cResult: { conversationId: string } | null = null;
+  let b2cError: string | null = null;
+
+  if (process.env.MPESA_INITIATOR_NAME && (process.env.MPESA_SECURITY_CREDENTIAL || process.env.MPESA_INITIATOR_PASSWORD)) {
+    try {
+      const baseUrl = getCallbackBaseUrl(req);
+      const result = await initiateB2C({
+        phoneNumber: withdrawal.phone,
+        amount: Number(withdrawal.amount),
+        commandId: "BusinessPayment",
+        remarks: `Settlement for withdrawal #${id}`,
+        occasion: `Nexus Pay settlement`,
+        resultUrl: `${baseUrl}/api/admin/settlement/result`,
+        timeoutUrl: `${baseUrl}/api/admin/settlement/timeout`,
+      });
+      b2cResult = { conversationId: result.ConversationID };
+      logger.info({ withdrawalId: id, conversationId: result.ConversationID, phone: withdrawal.phone, amount: withdrawal.amount }, "Auto B2C settlement triggered");
+    } catch (err) {
+      b2cError = err instanceof Error ? err.message : "B2C failed";
+      logger.error({ withdrawalId: id, err }, "Auto B2C settlement failed");
+    }
+  } else {
+    b2cError = "B2C not configured — MPESA_INITIATOR_NAME and MPESA_SECURITY_CREDENTIAL required";
+    logger.warn({ withdrawalId: id }, "B2C credentials not configured for auto settlement");
+  }
+
   const rows = await db.update(withdrawalRequestsTable).set({
-    status: "completed",
-    note: note || null,
+    status: b2cResult ? "processing" : "completed",
+    note: b2cResult
+      ? `B2C initiated — conversationId: ${b2cResult.conversationId}${note ? `. ${note}` : ""}`
+      : (b2cError ? `Manual settlement required — ${b2cError}${note ? `. ${note}` : ""}` : note || null),
     processedAt: new Date(),
   }).where(eq(withdrawalRequestsTable.id, id)).returning();
 
-  if (rows.length === 0) { res.status(404).json({ error: "NOT_FOUND", message: "Withdrawal not found" }); return; }
+  res.json({
+    message: b2cResult
+      ? `B2C settlement triggered — KES ${withdrawal.amount} → ${withdrawal.phone}`
+      : `Marked as complete — ${b2cError ?? ""}`,
+    withdrawal: rows[0],
+    b2cConversationId: b2cResult?.conversationId ?? null,
+    b2cError,
+  });
+});
 
-  res.json({ message: "Withdrawal marked as complete", withdrawal: rows[0] });
+// POST /api/admin/settlement/result — B2C result callback from Safaricom
+router.post("/admin/settlement/result", async (req, res) => {
+  try {
+    const result = req.body?.Result;
+    if (result?.ConversationID) {
+      const conversationId: string = result.ConversationID;
+      const resultCode: number = result.ResultCode;
+      const resultDesc: string = result.ResultDesc;
+      const status = resultCode === 0 ? "completed" : "failed";
+
+      // Find withdrawal by conversationId in note field and update
+      const allPending = await db.select().from(withdrawalRequestsTable)
+        .where(eq(withdrawalRequestsTable.status, "processing"));
+      const match = allPending.find(w => w.note?.includes(conversationId));
+      if (match) {
+        await db.update(withdrawalRequestsTable)
+          .set({ status, note: `${match.note ?? ""} | B2C result: ${resultDesc}`, processedAt: new Date() })
+          .where(eq(withdrawalRequestsTable.id, match.id));
+      }
+      logger.info({ conversationId, status, resultDesc }, "Admin settlement B2C result received");
+    }
+  } catch (err) {
+    logger.error(err, "Admin settlement result callback error");
+  }
+  res.json({ ResultCode: 0, ResultDesc: "Accepted" });
+});
+
+// POST /api/admin/settlement/timeout
+router.post("/admin/settlement/timeout", async (req, res) => {
+  res.json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
 
 // POST /admin/withdrawals/:id/reject — reject a withdrawal

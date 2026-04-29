@@ -88,13 +88,16 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
     : undefined;
 
   // Paybill → CustomerPayBillOnline, PartyB = merchant paybill business number.
+  //           If businessNumber missing, fall back to accountNumber as the paybill shortcode.
   //           AccountReference = merchant's account number on their paybill.
-  const merchantPaybill = resolvedSettlement?.accountType === "paybill" && resolvedSettlement.businessNumber
-    ? resolvedSettlement.businessNumber
+  const paybillShortcode = resolvedSettlement?.accountType === "paybill"
+    ? (resolvedSettlement.businessNumber || resolvedSettlement.accountNumber)
     : undefined;
 
+  const merchantPaybill = paybillShortcode || undefined;
+
   const effectiveAccountReference = resolvedSettlement?.accountType === "paybill"
-    ? resolvedSettlement.accountNumber
+    ? (resolvedSettlement.businessNumber ? resolvedSettlement.accountNumber : accountReference)
     : accountReference;
 
   try {
