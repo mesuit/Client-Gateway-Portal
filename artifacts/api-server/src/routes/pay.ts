@@ -127,6 +127,8 @@ router.post("/pay/:slug", async (req, res) => {
   // Look up merchant's default settlement account
   let settlementAccountId: number | null = null;
   let merchantTill: string | undefined = undefined;
+  let merchantPaybill: string | undefined = undefined;
+  let effectiveAccountReference = link.accountReference;
 
   const defaults = await db
     .select()
@@ -138,10 +140,20 @@ router.post("/pay/:slug", async (req, res) => {
     ));
 
   if (defaults.length > 0) {
-    settlementAccountId = defaults[0].id;
-    // If the merchant's settlement is a till, route money directly to their till
-    if (defaults[0].accountType === "till") {
-      merchantTill = defaults[0].accountNumber;
+    const settlement = defaults[0];
+    settlementAccountId = settlement.id;
+
+    if (settlement.accountType === "till") {
+      // CustomerBuyGoodsOnline — money goes directly to merchant's till
+      merchantTill = settlement.accountNumber;
+    } else if (settlement.accountType === "paybill") {
+      // CustomerPayBillOnline — PartyB = merchant's paybill business number
+      // Falls back to accountNumber if businessNumber wasn't set
+      merchantPaybill = settlement.businessNumber || settlement.accountNumber || undefined;
+      // Use merchant's paybill account number as the AccountReference
+      if (settlement.businessNumber && settlement.accountNumber) {
+        effectiveAccountReference = settlement.accountNumber;
+      }
     }
   }
 
@@ -151,10 +163,11 @@ router.post("/pay/:slug", async (req, res) => {
     const result = await initiateSTKPush({
       phoneNumber,
       amount: finalAmount,
-      accountReference: link.accountReference,
+      accountReference: effectiveAccountReference,
       transactionDesc: link.transactionDesc,
       callbackUrl,
       merchantTill,
+      merchantPaybill,
     });
 
     const [tx] = await db.insert(transactionsTable).values({
