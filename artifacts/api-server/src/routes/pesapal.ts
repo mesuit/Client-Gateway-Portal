@@ -158,7 +158,9 @@ router.get("/pesapal/callback", async (req, res) => {
       logger.error(err, "PesaPal callback status update error");
     }
   }
-  res.redirect(`https://pay.makamesco-tech.co.ke/card?status=done&ref=${encodeURIComponent(OrderMerchantReference ?? "")}`);
+  const baseUrl = process.env.CALLBACK_BASE_URL ?? "https://pay.makamesco-tech.co.ke";
+  const returnPage = OrderMerchantReference?.startsWith("NEXUS-") ? "/card-test" : "/card";
+  res.redirect(`${baseUrl}${returnPage}?status=done&tracking=${encodeURIComponent(OrderTrackingId ?? "")}&ref=${encodeURIComponent(OrderMerchantReference ?? "")}`);
 });
 
 // GET /payments/pesapal/status/:orderTrackingId — check status (API key auth)

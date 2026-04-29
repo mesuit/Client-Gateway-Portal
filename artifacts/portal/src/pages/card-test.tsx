@@ -74,6 +74,34 @@ export default function CardTest() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [pollLog]);
 
+  // Detect return from PesaPal payment page via URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tracking = params.get("tracking");
+    const status = params.get("status");
+    if (tracking && status === "done") {
+      const storedKey = sessionStorage.getItem("pesapal_test_key");
+      if (storedKey) {
+        setApiKey(storedKey);
+        addLog("Returned from PesaPal — fetching final status…");
+        setResult(prev => prev ?? { orderTrackingId: tracking, merchantReference: "", redirectUrl: "", amount: 0, netAmount: 0, platformFee: 0, currency: "KES" });
+        fetch(`${API_BASE}/api/payments/pesapal/status/${tracking}`, {
+          headers: { "X-API-Key": storedKey },
+        })
+          .then(r => r.json())
+          .then(data => {
+            setPollResult(data);
+            addLog(`Final status: ${data.status?.toUpperCase()}`);
+            if (data.paymentMethod) addLog(`Method: ${data.paymentMethod}`);
+          })
+          .catch(() => addLog("Could not fetch final status."));
+      }
+      // Clean up URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const addLog = (msg: string) =>
     setPollLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
@@ -129,12 +157,14 @@ export default function CardTest() {
     setPollResult(null);
     setPollLog([]);
     stopPolling();
+    // Save key so we can retrieve it when PesaPal redirects back here
+    sessionStorage.setItem("pesapal_test_key", apiKey.trim());
     try {
       const body: Record<string, unknown> = {
         amount: Number(amount),
         description,
-        callbackUrl: `${API_BASE}/api/payments/pesapal/callback`,
-        cancellationUrl: `${window.location.origin}/card`,
+        callbackUrl: `${API_BASE}/api/pesapal/callback`,
+        cancellationUrl: `${API_BASE}/api/pesapal/callback`,
       };
       if (phone) body.phone = phone;
       if (email) body.email = email;
