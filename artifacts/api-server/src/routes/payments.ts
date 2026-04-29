@@ -52,7 +52,7 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
   }
 
   // Resolve settlement account
-  let resolvedSettlement: { id: number; accountNumber: string; accountType: string } | null = null;
+  let resolvedSettlement: { id: number; accountNumber: string; businessNumber: string | null; accountType: string } | null = null;
 
   if (settlementAccountId) {
     const accts = await db
@@ -84,15 +84,23 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
   const merchantTill = resolvedSettlement?.accountType === "till"
     ? resolvedSettlement.accountNumber
     : undefined;
+  const merchantPaybill = resolvedSettlement?.accountType === "paybill" && resolvedSettlement.businessNumber
+    ? resolvedSettlement.businessNumber
+    : undefined;
+  // For paybill, the accountReference should be the merchant's account number
+  const effectiveAccountReference = resolvedSettlement?.accountType === "paybill"
+    ? resolvedSettlement.accountNumber
+    : accountReference;
 
   try {
     const result = await initiateSTKPush({
       phoneNumber,
       amount: Number(amount),
-      accountReference,
+      accountReference: effectiveAccountReference,
       transactionDesc,
       callbackUrl,
       merchantTill,
+      merchantPaybill,
     });
 
     const [tx] = await db.insert(transactionsTable).values({

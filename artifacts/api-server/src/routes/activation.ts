@@ -8,17 +8,21 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const PLANS: Record<string, number> = {
-  monthly: 100,
-  yearly: 500,
+const PLANS: Record<string, { amount: number; days: number; label: string }> = {
+  monthly:    { amount: 100,  days: 30,  label: "Monthly" },
+  yearly:     { amount: 500,  days: 365, label: "Yearly" },
+  "1month":   { amount: 450,  days: 30,  label: "1 Month" },
+  "3months":  { amount: 1400, days: 90,  label: "3 Months" },
+  "6months":  { amount: 2800, days: 180, label: "6 Months" },
+  "12months": { amount: 3800, days: 365, label: "12 Months" },
 };
 
 // POST /activate — initiate activation STK push
 router.post("/activate", requireAuth, async (req: AuthRequest, res) => {
   const { plan, phone } = req.body;
 
-  if (!plan || !["monthly", "yearly"].includes(plan)) {
-    res.status(400).json({ error: "VALIDATION_ERROR", message: "plan must be 'monthly' or 'yearly'" });
+  if (!plan || !Object.keys(PLANS).includes(plan)) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid plan" });
     return;
   }
   if (!phone) {
@@ -32,15 +36,15 @@ router.post("/activate", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  const amount = PLANS[plan];
+  const planDetails = PLANS[plan];
   const callbackUrl = `${getCallbackBaseUrl(req)}/api/activate/callback`;
 
   try {
     const result = await initiateSTKPush({
       phoneNumber: phone,
-      amount,
-      accountReference: `NEXUSPAY-${plan.toUpperCase()}`,
-      transactionDesc: `Nexus Pay ${plan === "monthly" ? "Monthly" : "Yearly"} Activation`,
+      amount: planDetails.amount,
+      accountReference: `ACTIVATION-${plan.toUpperCase()}`,
+      transactionDesc: `${planDetails.label} Plan Activation`,
       callbackUrl,
       // No merchantTill → goes to platform shortcode (collected by platform)
     });
@@ -108,11 +112,9 @@ router.post("/activate/callback", async (req, res) => {
       const payment = rows[0];
       const plan = payment.plan;
       const now = new Date();
-
-      // Monthly: expires in 30 days; yearly: expires in 365 days
+      const planDetails = PLANS[plan] ?? { days: 30 };
       const expiresAt = new Date(now);
-      if (plan === "monthly") expiresAt.setDate(expiresAt.getDate() + 30);
-      else expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      expiresAt.setDate(expiresAt.getDate() + planDetails.days);
 
       await db.update(usersTable)
         .set({

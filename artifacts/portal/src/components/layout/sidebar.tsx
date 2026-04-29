@@ -24,10 +24,18 @@ const NAV_ITEMS = [
   { href: "/docs", label: "Documentation", icon: BookOpen },
 ];
 
+const HEISTTECH_PLANS = [
+  { id: "1month",   label: "1 Month Plan",   amount: 450,  badge: null,                             badgeColor: "",          popular: false, note: null },
+  { id: "3months",  label: "3 Months Plan",  amount: 1400, badge: "🎉 You Save KES 100!",           badgeColor: "bg-green-500", popular: true,  note: null },
+  { id: "6months",  label: "6 Months Plan",  amount: 2800, badge: "🔥 You Save KES 200!",           badgeColor: "bg-orange-400", popular: false, note: null },
+  { id: "12months", label: "12 Months Plan", amount: 3800, badge: "🚀 You Save KES 2,200!",          badgeColor: "bg-blue-500", popular: false, note: "Renews at: KES 5000/year" },
+];
+
 function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [plan, setPlan] = useState<"monthly" | "yearly">("monthly");
+  const [plan, setPlan] = useState<string>(isHeistTech ? "1month" : "monthly");
   const [phone, setPhone] = useState("");
   const [step, setStep] = useState<"choose" | "paying" | "done">("choose");
   const [checkoutId, setCheckoutId] = useState<string | null>(null);
@@ -36,6 +44,10 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
 
   useEffect(() => { return () => stopPoll(); }, []);
+
+  const currentAmount = isHeistTech
+    ? (HEISTTECH_PLANS.find(p => p.id === plan)?.amount ?? 450)
+    : (plan === "monthly" ? 100 : 500);
 
   const handlePay = async () => {
     const digits = phone.replace(/\D/g, "");
@@ -91,7 +103,7 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) handleClose(); }}>
-      <DialogContent className="sm:max-w-md mx-4">
+      <DialogContent className={isHeistTech ? "sm:max-w-sm mx-4" : "sm:max-w-md mx-4"}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-green-600" /> Activate Your Account
@@ -115,11 +127,55 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
             <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto" />
             <p className="font-semibold">STK Push Sent!</p>
             <p className="text-sm text-muted-foreground">
-              Check your phone for the M-Pesa prompt. Enter your PIN to pay <strong>KES {plan === "monthly" ? 100 : 500}</strong>.
+              Check your phone for the M-Pesa prompt. Enter your PIN to pay <strong>KES {currentAmount.toLocaleString()}</strong>.
             </p>
             <p className="text-xs text-muted-foreground animate-pulse">Waiting for payment confirmation…</p>
           </div>
+        ) : isHeistTech ? (
+          /* ── HeistTech 4-plan layout ── */
+          <div className="space-y-4 py-1">
+            <div className="space-y-3">
+              {HEISTTECH_PLANS.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setPlan(p.id)}
+                  className={`relative w-full rounded-xl border-2 p-4 text-center transition-all overflow-hidden ${plan === p.id ? "border-green-500 bg-green-50/50" : "border-gray-100 hover:border-gray-200 bg-white"}`}
+                >
+                  {p.popular && (
+                    <div className="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-4 py-1 rotate-0"
+                      style={{ clipPath: "polygon(0 0,100% 0,100% 100%)", paddingLeft: "20px", paddingBottom: "16px" }}>
+                      Popular
+                    </div>
+                  )}
+                  <p className={`font-semibold text-base mb-1 ${p.popular ? "text-green-500" : p.id === "6months" ? "text-pink-500" : p.id === "12months" ? "text-gray-800" : "text-blue-500"}`}>
+                    {p.label}
+                  </p>
+                  <p className="text-xl font-bold text-gray-900">KES {p.amount.toLocaleString()}</p>
+                  {p.badge ? (
+                    <span className={`inline-block mt-1.5 text-white text-xs font-semibold px-3 py-1 rounded-full ${p.badgeColor}`}>
+                      {p.badge}
+                    </span>
+                  ) : (
+                    <span className="inline-block mt-1.5 text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">No Savings</span>
+                  )}
+                  {p.note && <p className="text-xs text-blue-600 font-medium mt-1.5">{p.note}</p>}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <Label>M-Pesa Phone Number</Label>
+              <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="0712345678" />
+              <p className="text-xs text-muted-foreground">We'll send an STK Push to this number</p>
+            </div>
+
+            <Button onClick={handlePay} className="w-full bg-green-600 hover:bg-green-700" disabled={!phone}>
+              <Zap className="w-4 h-4 mr-2" />
+              Pay KES {currentAmount.toLocaleString()} & Activate
+            </Button>
+          </div>
         ) : (
+          /* ── Nexus Pay 2-plan layout (unchanged) ── */
           <div className="space-y-5 py-2">
             <div className="grid grid-cols-2 gap-3">
               {(["monthly", "yearly"] as const).map(p => (
@@ -142,12 +198,7 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 
             <div className="space-y-2">
               <Label>M-Pesa Phone Number</Label>
-              <Input
-                type="tel"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="0712345678"
-              />
+              <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="0712345678" />
               <p className="text-xs text-muted-foreground">We'll send an STK Push to this number</p>
             </div>
 
@@ -159,11 +210,7 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
               <p>✓ No transaction fees</p>
             </div>
 
-            <Button
-              onClick={handlePay}
-              className="w-full bg-green-600 hover:bg-green-700"
-              disabled={!phone}
-            >
+            <Button onClick={handlePay} className="w-full bg-green-600 hover:bg-green-700" disabled={!phone}>
               <Zap className="w-4 h-4 mr-2" />
               Pay KES {plan === "monthly" ? 100 : 500} & Activate
             </Button>

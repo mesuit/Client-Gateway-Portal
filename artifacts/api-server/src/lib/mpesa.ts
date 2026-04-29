@@ -76,6 +76,8 @@ export interface STKPushParams {
   callbackUrl: string;
   /** Merchant's M-Pesa till number. When set, money goes to merchant's till (BuyGoods). */
   merchantTill?: string;
+  /** Merchant's Paybill business number. When set, money goes to merchant's paybill. */
+  merchantPaybill?: string;
 }
 
 export interface STKPushResult {
@@ -93,11 +95,19 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
 
   const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
 
-  // If a merchant till is provided, send money to them (BuyGoods / CustomerBuyGoodsOnline).
-  // The platform's shortcode is used for auth; the merchant's till receives the funds.
-  // If no merchant till, fall back to platform's own shortcode (PayBill).
-  const partyB = params.merchantTill || SHORTCODE;
-  const transactionType = params.merchantTill ? "CustomerBuyGoodsOnline" : "CustomerPayBillOnline";
+  // Route to merchant's till (BuyGoods), merchant's paybill, or platform shortcode.
+  let partyB: string;
+  let transactionType: string;
+  if (params.merchantTill) {
+    partyB = params.merchantTill;
+    transactionType = "CustomerBuyGoodsOnline";
+  } else if (params.merchantPaybill) {
+    partyB = params.merchantPaybill;
+    transactionType = "CustomerPayBillOnline";
+  } else {
+    partyB = SHORTCODE;
+    transactionType = "CustomerPayBillOnline";
+  }
 
   const body = {
     BusinessShortCode: SHORTCODE,
