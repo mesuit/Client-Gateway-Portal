@@ -52,7 +52,7 @@ router.post("/activate", requireAuth, async (req: AuthRequest, res) => {
     const [payment] = await db.insert(activationPaymentsTable).values({
       userId: req.userId!,
       plan,
-      amount: String(amount),
+      amount: String(planDetails.amount),
       checkoutRequestId: result.CheckoutRequestID,
       merchantRequestId: result.MerchantRequestID,
       status: "pending",
@@ -62,7 +62,7 @@ router.post("/activate", requireAuth, async (req: AuthRequest, res) => {
       checkoutRequestId: result.CheckoutRequestID,
       customerMessage: result.CustomerMessage,
       paymentId: payment.id,
-      amount,
+      amount: planDetails.amount,
       plan,
     });
   } catch (err) {
