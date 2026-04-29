@@ -63,16 +63,20 @@ export default function Login() {
     );
   };
 
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <div className="w-12 h-12 bg-primary rounded-lg mx-auto flex items-center justify-center text-primary-foreground font-bold text-2xl mb-4">
-            N
+            {isHeistTech ? "H" : "N"}
           </div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Sign in to Nexus Pay</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900">
+            {isHeistTech ? "Sign in to HeistTech" : "Sign in to Nexus Pay"}
+          </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Makamesco Nexus Pay — M-Pesa payment gateway
+            {isHeistTech ? "HeistTech Enterprise Pay — M-Pesa payment gateway" : "Makamesco Nexus Pay — M-Pesa payment gateway"}
           </p>
         </div>
 

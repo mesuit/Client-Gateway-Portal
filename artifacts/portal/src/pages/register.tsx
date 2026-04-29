@@ -24,6 +24,7 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const { login, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
   
   const registerMutation = useRegister();
   
@@ -48,7 +49,7 @@ export default function Register() {
       {
         onSuccess: (data) => {
           login(data.token, data.user);
-          toast({ title: "Account created", description: "Welcome to Makamesco Nexus Pay!" });
+          toast({ title: "Account created", description: isHeistTech ? "Welcome to HeistTech Enterprise Pay!" : "Welcome to Makamesco Nexus Pay!" });
           setLocation("/dashboard");
         },
         onError: (error) => {

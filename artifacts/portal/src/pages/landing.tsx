@@ -51,16 +51,17 @@ const CODE_EXAMPLE = `curl -X POST https://pay.makamesco-tech.co.ke/api/payments
   }'`;
 
 export default function Landing() {
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans">
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <img src="/favicon.png" alt="Nexus Pay" className="w-9 h-9 rounded-xl object-contain" />
+            <img src="/favicon.png" alt={isHeistTech ? "HeistTech Pay" : "Nexus Pay"} className="w-9 h-9 rounded-xl object-contain" />
             <div>
-              <span className="font-bold text-gray-900">Nexus Pay</span>
-              <span className="hidden sm:inline text-xs text-gray-400 ml-1">by Makamesco</span>
+              <span className="font-bold text-gray-900">{isHeistTech ? "HeistTech Pay" : "Nexus Pay"}</span>
+              {!isHeistTech && <span className="hidden sm:inline text-xs text-gray-400 ml-1">by Makamesco</span>}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -94,8 +95,9 @@ export default function Landing() {
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto leading-relaxed">
-            Nexus Pay gives Kenyan businesses a clean REST API to trigger STK Push payments,
-            create payment links, and route money directly to their M-Pesa till — no agents, no delays.
+            {isHeistTech
+              ? "HeistTech Enterprise Pay gives businesses a clean REST API to trigger STK Push payments, create payment links, and route money directly to their M-Pesa till — no agents, no delays."
+              : "Nexus Pay gives Kenyan businesses a clean REST API to trigger STK Push payments, create payment links, and route money directly to their M-Pesa till — no agents, no delays."}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
@@ -212,9 +214,9 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
-              <span className="text-white font-black text-xs">N</span>
+              <span className="text-white font-black text-xs">{isHeistTech ? "H" : "N"}</span>
             </div>
-            <span>Nexus Pay · Makamesco Tech</span>
+            <span>{isHeistTech ? "HeistTech Enterprise Pay" : "Nexus Pay · Makamesco Tech"}</span>
           </div>
           <div className="flex gap-6">
             <Link href="/docs" className="hover:text-gray-700 transition-colors">Documentation</Link>
