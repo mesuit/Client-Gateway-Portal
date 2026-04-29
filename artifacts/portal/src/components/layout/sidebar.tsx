@@ -132,44 +132,58 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
             <p className="text-xs text-muted-foreground animate-pulse">Waiting for payment confirmation…</p>
           </div>
         ) : isHeistTech ? (
-          /* ── HeistTech 4-plan layout ── */
+          /* ── HeistTech: phone first, then plan dropdown ── */
           <div className="space-y-4 py-1">
-            <div className="space-y-3">
-              {HEISTTECH_PLANS.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => setPlan(p.id)}
-                  className={`relative w-full rounded-xl border-2 p-4 text-center transition-all overflow-hidden ${plan === p.id ? "border-green-500 bg-green-50/50" : "border-gray-100 hover:border-gray-200 bg-white"}`}
-                >
-                  {p.popular && (
-                    <div className="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-bold px-4 py-1 rotate-0"
-                      style={{ clipPath: "polygon(0 0,100% 0,100% 100%)", paddingLeft: "20px", paddingBottom: "16px" }}>
-                      Popular
-                    </div>
-                  )}
-                  <p className={`font-semibold text-base mb-1 ${p.popular ? "text-green-500" : p.id === "6months" ? "text-pink-500" : p.id === "12months" ? "text-gray-800" : "text-blue-500"}`}>
-                    {p.label}
-                  </p>
-                  <p className="text-xl font-bold text-gray-900">KES {p.amount.toLocaleString()}</p>
-                  {p.badge ? (
-                    <span className={`inline-block mt-1.5 text-white text-xs font-semibold px-3 py-1 rounded-full ${p.badgeColor}`}>
-                      {p.badge}
+            {/* Step 1 — Phone */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold">M-Pesa Phone Number</Label>
+              <Input
+                type="tel"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="e.g. 0712 345 678"
+                className="h-11 text-base"
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">Enter the M-Pesa number that will receive the STK push prompt</p>
+            </div>
+
+            {/* Step 2 — Plan dropdown */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold">Select Subscription Plan</Label>
+              <select
+                value={plan}
+                onChange={e => setPlan(e.target.value)}
+                className="w-full h-11 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                {HEISTTECH_PLANS.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} — KES {p.amount.toLocaleString()}{p.badge ? ` (${p.badge})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Selected plan summary */}
+            {(() => {
+              const selected = HEISTTECH_PLANS.find(p => p.id === plan)!;
+              return (
+                <div className={`rounded-lg border-2 p-3 text-center space-y-1 ${selected.popular ? "border-green-400 bg-green-50" : "border-gray-100 bg-gray-50"}`}>
+                  <p className="font-semibold text-base">{selected.label}</p>
+                  <p className="text-2xl font-bold">KES {selected.amount.toLocaleString()}</p>
+                  {selected.badge ? (
+                    <span className={`inline-block text-white text-xs font-semibold px-3 py-0.5 rounded-full ${selected.badgeColor}`}>
+                      {selected.badge}
                     </span>
                   ) : (
-                    <span className="inline-block mt-1.5 text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">No Savings</span>
+                    <span className="inline-block text-xs text-gray-500 bg-gray-200 px-3 py-0.5 rounded-full">No Savings</span>
                   )}
-                  {p.note && <p className="text-xs text-blue-600 font-medium mt-1.5">{p.note}</p>}
-                </button>
-              ))}
-            </div>
+                  {selected.note && <p className="text-xs text-blue-600 font-medium">{selected.note}</p>}
+                </div>
+              );
+            })()}
 
-            <div className="space-y-2">
-              <Label>M-Pesa Phone Number</Label>
-              <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="0712345678" />
-              <p className="text-xs text-muted-foreground">We'll send an STK Push to this number</p>
-            </div>
-
-            <Button onClick={handlePay} className="w-full bg-green-600 hover:bg-green-700" disabled={!phone}>
+            <Button onClick={handlePay} className="w-full bg-green-600 hover:bg-green-700 h-11" disabled={!phone}>
               <Zap className="w-4 h-4 mr-2" />
               Pay KES {currentAmount.toLocaleString()} & Activate
             </Button>
@@ -306,7 +320,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               className="w-full bg-green-600 hover:bg-green-700 text-white h-7 text-xs gap-1"
               onClick={() => setActivateOpen(true)}
             >
-              <Zap className="w-3 h-3" /> Activate — From KES 100
+              <Zap className="w-3 h-3" />
+              {typeof window !== "undefined" && window.location.hostname.includes("heisttech")
+                ? "Activate — From KES 450"
+                : "Activate — From KES 100"}
             </Button>
           </div>
         )}
@@ -406,7 +423,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
                   className="w-full bg-green-600 hover:bg-green-700 text-white h-7 text-xs gap-1"
                   onClick={() => { setMobileMenuOpen(false); setActivateOpen(true); }}
                 >
-                  <Zap className="w-3 h-3" /> Activate — From KES 100
+                  <Zap className="w-3 h-3" />
+                  {typeof window !== "undefined" && window.location.hostname.includes("heisttech")
+                    ? "Activate — From KES 450"
+                    : "Activate — From KES 100"}
                 </Button>
               </div>
             )}
