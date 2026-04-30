@@ -152,6 +152,37 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
 
 // ─── B2C ─────────────────────────────────────────────────────────────────────
 
+// Separate B2C credentials (different app/shortcode from STK Push)
+const B2C_CONSUMER_KEY = process.env.B2C_CONSUMER_KEY ?? CONSUMER_KEY;
+const B2C_CONSUMER_SECRET = process.env.B2C_CONSUMER_SECRET ?? CONSUMER_SECRET;
+const B2C_SHORTCODE = process.env.B2C_SHORTCODE ?? SHORTCODE;
+
+let cachedB2CToken: { token: string; expiresAt: number } | null = null;
+
+async function getB2CAccessToken(): Promise<string> {
+  if (cachedB2CToken && Date.now() < cachedB2CToken.expiresAt) {
+    return cachedB2CToken.token;
+  }
+  const credentials = Buffer.from(`${B2C_CONSUMER_KEY}:${B2C_CONSUMER_SECRET}`).toString("base64");
+  const response = await fetch(
+    `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
+    { headers: { Authorization: `Basic ${credentials}` } }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    logger.error({ status: response.status, body: text }, "Failed to get B2C access token");
+    throw new Error(`Failed to get B2C access token: ${response.status}`);
+  }
+  const data = (await response.json()) as { access_token: string; expires_in: string };
+  cachedB2CToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + (parseInt(data.expires_in) - 60) * 1000,
+  };
+  return cachedB2CToken.token;
+}
+
+
+
 // Safaricom Production Certificate (for encrypting the initiator password).
 // This is Safaricom's publicly published ProductionCertificate.cer in PEM form.
 const SAFARICOM_PRODUCTION_CERT = `-----BEGIN CERTIFICATE-----
@@ -241,7 +272,7 @@ export async function initiateB2C(params: B2CParams): Promise<B2CResult> {
   const initiatorName = process.env.MPESA_INITIATOR_NAME;
   if (!initiatorName) throw new Error("MPESA_INITIATOR_NAME must be set for B2C");
 
-  const token = await getAccessToken();
+  const token = await getB2CAccessToken();
   const securityCredential = getSecurityCredential();
 
   const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
@@ -251,7 +282,7 @@ export async function initiateB2C(params: B2CParams): Promise<B2CResult> {
     SecurityCredential: securityCredential,
     CommandID: params.commandId ?? "BusinessPayment",
     Amount: Math.ceil(params.amount),
-    PartyA: SHORTCODE,
+    PartyA: B2C_SHORTCODE,
     PartyB: phone,
     Remarks: params.remarks,
     QueueTimeOutURL: params.timeoutUrl,
