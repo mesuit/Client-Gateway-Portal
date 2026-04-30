@@ -20,6 +20,8 @@ export const b2cTransactionsTable = pgTable("b2c_transactions", {
   b2cRecipientIsRegistered: text("b2c_recipient_is_registered"),
   b2cChargesPaidAccount: text("b2c_charges_paid_account"),
   receiverPartyPublicName: text("receiver_party_public_name"),
+  feeAmount: numeric("fee_amount", { precision: 12, scale: 2 }),
+  totalDeducted: numeric("total_deducted", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
+import { getOrCreateWallet, deductWallet, refundWallet, B2C_FEE_RATE } from "./b2c-wallet";
 
 const router = Router();
 
@@ -38,14 +39,36 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
     return;
   }
 
+  const sendAmount = Number(amount);
+  const feeAmount = parseFloat((sendAmount * B2C_FEE_RATE).toFixed(2));
+  const totalDeducted = parseFloat((sendAmount + feeAmount).toFixed(2));
+
+  // Check wallet balance before proceeding
+  const wallet = await getOrCreateWallet(userId);
+  if (Number(wallet.balance) < totalDeducted) {
+    res.status(402).json({
+      error: "INSUFFICIENT_B2C_BALANCE",
+      message: `Insufficient B2C wallet balance. Need KES ${totalDeducted.toFixed(2)} (KES ${sendAmount} + KES ${feeAmount.toFixed(2)} fee). Current balance: KES ${Number(wallet.balance).toFixed(2)}. Please top up your B2C wallet first.`,
+      required: totalDeducted,
+      available: Number(wallet.balance),
+      feeAmount,
+    });
+    return;
+  }
+
   const baseUrl = getCallbackBaseUrl(req);
   const resultUrl = `${baseUrl}/api/payments/b2c/result`;
   const timeoutUrl = `${baseUrl}/api/payments/b2c/timeout`;
 
+  let deducted = false;
   try {
+    // Atomically deduct from wallet
+    await deductWallet(userId, sendAmount);
+    deducted = true;
+
     const result = await initiateB2C({
       phoneNumber,
-      amount: Number(amount),
+      amount: sendAmount,
       commandId: commandId ?? "BusinessPayment",
       remarks,
       occasion,
@@ -58,14 +81,16 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
       conversationId: result.ConversationID,
       originatorConversationId: result.OriginatorConversationID,
       phoneNumber,
-      amount: String(amount),
+      amount: String(sendAmount),
       commandId: commandId ?? "BusinessPayment",
       remarks,
       occasion: occasion ?? null,
       status: "pending",
+      feeAmount: String(feeAmount),
+      totalDeducted: String(totalDeducted),
     }).returning();
 
-    logger.info({ conversationId: result.ConversationID, userId }, "B2C payment initiated");
+    logger.info({ conversationId: result.ConversationID, userId, feeAmount, totalDeducted }, "B2C payment initiated");
 
     res.json({
       conversationId: result.ConversationID,
@@ -73,13 +98,21 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
       responseCode: result.ResponseCode,
       responseDescription: result.ResponseDescription,
       transactionId: tx.id,
+      feeAmount,
+      totalDeducted,
     });
   } catch (err) {
-    logger.error(err, "B2C initiation failed");
-    res.status(502).json({
-      error: "MPESA_ERROR",
-      message: err instanceof Error ? err.message : "B2C payment failed",
-    });
+    // Refund wallet if deduction happened but B2C call failed
+    if (deducted) {
+      await refundWallet(userId, totalDeducted).catch(e => logger.error(e, "Wallet refund failed"));
+    }
+    const message = err instanceof Error ? err.message : "B2C payment failed";
+    if (message === "INSUFFICIENT_B2C_BALANCE") {
+      res.status(402).json({ error: "INSUFFICIENT_B2C_BALANCE", message: "Insufficient B2C wallet balance." });
+    } else {
+      logger.error(err, "B2C initiation failed");
+      res.status(502).json({ error: "MPESA_ERROR", message });
+    }
   }
 });
 

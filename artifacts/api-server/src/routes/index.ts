@@ -12,6 +12,7 @@ import walletRouter from "./wallet";
 import adminRouter from "./admin";
 import activationRouter from "./activation";
 import b2cRouter from "./b2c";
+import b2cWalletRouter from "./b2c-wallet";
 import pesapalRouter from "./pesapal";
 
 const router: IRouter = Router();
@@ -29,6 +30,7 @@ router.use(walletRouter);
 router.use(adminRouter);
 router.use(activationRouter);
 router.use(b2cRouter);
+router.use(b2cWalletRouter);
 router.use(pesapalRouter);
 
 export default router;

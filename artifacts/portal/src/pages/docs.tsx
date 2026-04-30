@@ -593,8 +593,25 @@ if (status === 'completed') {
           <Badge className="bg-green-100 text-green-700 border-green-200 text-xs px-2 py-0.5 font-medium">Live</Badge>
         </h3>
         <p className="text-muted-foreground text-sm">
-          B2C (Business to Customer) lets you push money from your shortcode directly to any M-Pesa number. Use it for refunds, commissions, salaries, or cashback. Requires <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">MPESA_INITIATOR_NAME</code> and <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded font-mono text-xs">MPESA_SECURITY_CREDENTIAL</code> to be configured on your account.
+          B2C (Business to Customer) lets you push money from the platform shortcode directly to any M-Pesa number — for refunds, commissions, salaries, or cashback. B2C uses a <strong>prepaid wallet</strong>: top up your B2C wallet first (via STK Push), then each outgoing payment deducts the send amount plus an <strong>8% platform fee</strong>.
         </p>
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+          <p className="font-semibold mb-1">💰 Fee Structure</p>
+          <p><strong>8% platform fee</strong> is charged per B2C transaction. Example: sending <strong>KES 1,000</strong> deducts <strong>KES 1,080</strong> from your wallet (KES 1,000 sent + KES 80 fee). Top up your wallet from the <strong>B2C Payments</strong> page in your dashboard.</p>
+        </div>
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 1 — Get your B2C wallet balance</div>
+          <CodeBlock
+            curl={`curl ${BASE}/api/b2c/wallet \\
+  -H "Authorization: Bearer YOUR_SESSION_TOKEN"`}
+            node={`const res = await fetch('${BASE}/api/b2c/wallet', {
+  headers: { 'Authorization': 'Bearer YOUR_SESSION_TOKEN' }
+});
+const { balance, totalFees, feeRate } = await res.json();
+// balance — available to spend (KES)
+// feeRate  — 0.08 (8%)`}
+          />
+        </div>
 
         <EndpointCard method="POST" path="/api/payments/b2c" description="Send money from your shortcode to a customer's M-Pesa number.">
           <CodeBlock
