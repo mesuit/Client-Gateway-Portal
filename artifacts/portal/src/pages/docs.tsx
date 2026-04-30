@@ -1,7 +1,9 @@
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Terminal, Code2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Terminal, Code2, BookOpen } from "lucide-react";
 
 const BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
@@ -84,11 +86,39 @@ function EndpointCard({ method, path, description, children }: {
 }
 
 export default function Docs() {
+  const isHeistTech = typeof window !== "undefined" && window.location.hostname.includes("heisttech");
+  const brandName = isHeistTech ? "HeistTech Pay" : "Nexus Pay";
+  const brandInitial = isHeistTech ? "H" : "N";
+  const brandColor = isHeistTech ? "bg-red-600" : "bg-green-600";
+
   return (
-    <div className="space-y-10 max-w-4xl">
+    <div className="min-h-screen bg-white">
+      {/* Public Nav */}
+      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 font-semibold text-gray-900 hover:opacity-80 transition-opacity">
+            <div className={`w-7 h-7 ${brandColor} rounded-md flex items-center justify-center text-white text-xs font-bold`}>{brandInitial}</div>
+            <span className="text-sm">{brandName}</span>
+            <Badge variant="outline" className="text-xs ml-1 hidden sm:inline-flex gap-1">
+              <BookOpen className="w-3 h-3" /> Docs
+            </Badge>
+          </Link>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/login">Sign In</Link>
+            </Button>
+            <Button size="sm" className={`${brandColor} hover:opacity-90 text-white`} asChild>
+              <Link href="/register">Get Started</Link>
+            </Button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Docs Content */}
+      <div className="max-w-4xl mx-auto px-6 py-10 space-y-10">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">API Documentation</h2>
-        <p className="text-muted-foreground mt-1">Integrate Makamesco Nexus Pay M-Pesa payments into your application.</p>
+        <p className="text-muted-foreground mt-1">Integrate {brandName} M-Pesa payments into your application.</p>
       </div>
 
       {/* Sandbox Mode Notice */}
@@ -738,6 +768,7 @@ if (data.status === 'completed') {
           </table>
         </div>
       </section>
+      </div>
     </div>
   );
 }

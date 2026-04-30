@@ -55,9 +55,7 @@ function Router() {
       <Route path="/settlement">
         <ProtectedRoute><Settlement /></ProtectedRoute>
       </Route>
-      <Route path="/docs">
-        <ProtectedRoute><Docs /></ProtectedRoute>
-      </Route>
+      <Route path="/docs" component={Docs} />
       <Route path="/payment-links">
         <ProtectedRoute><PaymentLinks /></ProtectedRoute>
       </Route>
