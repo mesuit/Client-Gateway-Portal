@@ -199,7 +199,8 @@ const data = await res.json();
           ["amount", "number", "Amount to charge in KES (minimum 1)"],
           ["accountReference", "string", "Your internal reference, e.g. invoice or order ID"],
           ["transactionDesc", "string", "Description shown to the customer on their phone"],
-          ["settlementAccountId", "number", "Optional settlement account ID (uses default if omitted)", false],
+          ["settlementAccountId", "number", "ID of the settlement account to receive funds (uses your default if omitted)", false],
+          ["tenantCode", "string", "SaaS only: unique tenant code (e.g. tnnt_abc12345) — routes to that tenant's settlement account. Takes priority over settlementAccountId", false],
         ]} />
 
         <div className="border rounded-lg overflow-hidden text-sm">
@@ -761,28 +762,61 @@ if (data.status === 'completed') {
           <p className="text-sm text-muted-foreground">
             Include <code className="bg-gray-100 rounded px-1">tenantCode</code> in the request body. It takes priority over <code className="bg-gray-100 rounded px-1">settlementAccountId</code>.
           </p>
-          <pre className="bg-gray-900 text-green-300 text-xs rounded-lg p-4 overflow-x-auto">
-{`POST /api/payments/stkpush
-Authorization: Bearer YOUR_API_KEY
-
-{
-  "phoneNumber": "254712345678",
-  "amount": 1500,
-  "accountReference": "INV-001",
-  "transactionDesc": "Order Payment",
-  "tenantCode": "tnnt_abc12345"
-}`}
-          </pre>
+          <div className="rounded-lg overflow-hidden">
+            <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">cURL</div>
+            <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto">{`curl -X POST ${BASE}/api/payments/stkpush \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{
+    "phoneNumber": "254712345678",
+    "amount": 1500,
+    "accountReference": "INV-001",
+    "transactionDesc": "Order Payment",
+    "tenantCode": "tnnt_abc12345"
+  }'`}
+            </pre>
+          </div>
+          <div className="rounded-lg overflow-hidden">
+            <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">Node.js</div>
+            <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto">{`const res = await fetch('${BASE}/api/payments/stkpush', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'YOUR_SECRET_KEY'
+  },
+  body: JSON.stringify({
+    phoneNumber: '254712345678',
+    amount: 1500,
+    accountReference: 'INV-001',
+    transactionDesc: 'Order Payment',
+    tenantCode: 'tnnt_abc12345'   // tenant's unique code
+  })
+});
+const data = await res.json();
+// data.checkoutRequestId — poll to confirm payment`}
+            </pre>
+          </div>
         </div>
 
         <div className="space-y-2">
           <h4 className="font-semibold">Look up a tenant (optional)</h4>
           <p className="text-sm text-muted-foreground">Resolve a tenant's details by code using your API key:</p>
-          <pre className="bg-gray-900 text-green-300 text-xs rounded-lg p-4 overflow-x-auto">
-{`GET /api/saas/tenant/:tenantCode
-Authorization: Bearer YOUR_API_KEY`}
-          </pre>
-          <p className="text-sm text-muted-foreground">Response includes the tenant name, isActive flag, and settlement account info.</p>
+          <div className="rounded-lg overflow-hidden">
+            <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">cURL</div>
+            <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto">{`curl ${BASE}/api/saas/tenant/tnnt_abc12345 \\
+  -H "X-API-Key: YOUR_SECRET_KEY"`}
+            </pre>
+          </div>
+          <div className="rounded-lg overflow-hidden">
+            <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">Node.js</div>
+            <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto">{`const res = await fetch('${BASE}/api/saas/tenant/tnnt_abc12345', {
+  headers: { 'X-API-Key': 'YOUR_SECRET_KEY' }
+});
+const tenant = await res.json();
+// tenant.tenantCode, tenant.settlementAccountName, tenant.isActive`}
+            </pre>
+          </div>
+          <p className="text-sm text-muted-foreground">Response includes the tenant name, <code className="bg-gray-100 rounded px-1">isActive</code> flag, and settlement account info.</p>
         </div>
 
         <div className="border rounded-lg overflow-hidden text-sm">

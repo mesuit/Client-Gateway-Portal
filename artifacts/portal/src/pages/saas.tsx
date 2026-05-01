@@ -580,23 +580,52 @@ export default function Saas() {
         <Card className="border-gray-200 bg-gray-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Using Tenant Codes in Your API Calls</CardTitle>
-            <CardDescription>Pass <code className="bg-gray-200 rounded px-1">tenantCode</code> in the STK Push request body to route payment to a tenant's settlement account.</CardDescription>
+            <CardDescription>
+              Pass <code className="bg-gray-200 rounded px-1">tenantCode</code> in the STK Push request body. The payment settles to that tenant's settlement account automatically.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <pre className="bg-gray-900 text-green-300 text-xs rounded-lg p-4 overflow-x-auto leading-relaxed">
-{`POST /api/payments/stkpush
-Authorization: Bearer YOUR_API_KEY
+          <CardContent className="space-y-4">
+            {/* cURL */}
+            <div className="rounded-lg overflow-hidden">
+              <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">cURL</div>
+              <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto leading-relaxed">{`curl -X POST ${API_BASE}/api/payments/stkpush \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{
+    "phoneNumber": "254712345678",
+    "amount": 500,
+    "accountReference": "INV-001",
+    "transactionDesc": "Order Payment",
+    "tenantCode": "tnnt_abc12345"
+  }'`}
+              </pre>
+            </div>
 
-{
-  "phoneNumber": "254712345678",
-  "amount": 500,
-  "accountReference": "INV-001",
-  "transactionDesc": "Order Payment",
-  "tenantCode": "tnnt_abc12345"   // ← tenant's unique code
-}`}
-            </pre>
-            <p className="text-xs text-muted-foreground mt-2">
-              The payment will be initiated using your merchant credentials and settled to the tenant's assigned settlement account.
+            {/* Node.js */}
+            <div className="rounded-lg overflow-hidden">
+              <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">Node.js / JavaScript</div>
+              <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto leading-relaxed">{`const res = await fetch('${API_BASE}/api/payments/stkpush', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'YOUR_SECRET_KEY'
+  },
+  body: JSON.stringify({
+    phoneNumber: '254712345678',
+    amount: 500,
+    accountReference: 'INV-001',
+    transactionDesc: 'Order Payment',
+    tenantCode: 'tnnt_abc12345'   // ← copy from the tenant card above
+  })
+});
+
+const data = await res.json();
+// data.checkoutRequestId — poll /api/payments/status/:id to confirm`}
+              </pre>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Your merchant API key is used for authentication. The <code className="bg-gray-100 rounded px-1">tenantCode</code> determines which settlement account receives the funds.
             </p>
           </CardContent>
         </Card>
