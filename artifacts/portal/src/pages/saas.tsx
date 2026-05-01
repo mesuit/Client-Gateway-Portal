@@ -195,7 +195,7 @@ function TenantModal({
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [settlementAccountId, setSettlementAccountId] = useState<string>(
-    initial?.settlementAccountId ? String(initial.settlementAccountId) : ""
+    initial?.settlementAccountId ? String(initial.settlementAccountId) : "none"
   );
   const [loading, setLoading] = useState(false);
 
@@ -203,7 +203,7 @@ function TenantModal({
     if (open) {
       setName(initial?.name ?? "");
       setDescription(initial?.description ?? "");
-      setSettlementAccountId(initial?.settlementAccountId ? String(initial.settlementAccountId) : "");
+      setSettlementAccountId(initial?.settlementAccountId ? String(initial.settlementAccountId) : "none");
     }
   }, [open, initial]);
 
@@ -214,7 +214,7 @@ function TenantModal({
       const payload = {
         name: name.trim(),
         description: description.trim() || null,
-        settlementAccountId: settlementAccountId ? Number(settlementAccountId) : null,
+        settlementAccountId: (settlementAccountId && settlementAccountId !== "none") ? Number(settlementAccountId) : null,
       };
       const url = mode === "create" ? `${API_BASE}/api/saas/tenants` : `${API_BASE}/api/saas/tenants/${initial!.id}`;
       const method = mode === "create" ? "POST" : "PUT";
@@ -279,7 +279,7 @@ function TenantModal({
                   <SelectValue placeholder="Select settlement account…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None (no routing override)</SelectItem>
+                  <SelectItem value="none">None (no routing override)</SelectItem>
                   {settlementAccounts.map(a => (
                     <SelectItem key={a.id} value={String(a.id)}>
                       {a.accountName} — {a.accountType} {a.accountNumber}
