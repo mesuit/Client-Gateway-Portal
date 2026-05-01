@@ -14,6 +14,7 @@ import activationRouter from "./activation";
 import b2cRouter from "./b2c";
 import b2cWalletRouter from "./b2c-wallet";
 import pesapalRouter from "./pesapal";
+import saasRouter from "./saas";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(activationRouter);
 router.use(b2cRouter);
 router.use(b2cWalletRouter);
 router.use(pesapalRouter);
+router.use(saasRouter);
 
 export default router;

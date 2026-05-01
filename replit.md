@@ -65,7 +65,20 @@ A full M-Pesa payment gateway platform built on Daraja API. Merchants register, 
 - `/transactions` — Full transaction history with status filters
 - `/api-keys` — Manage API keys (create/revoke)
 - `/settlement` — Manage till/paybill settlement accounts
-- `/docs` — Integration documentation
+- `/payment-links` — Create hosted payment links
+- `/card` — Card & Airtel Money payments via PesaPal
+- `/b2c` — B2C prepaid wallet (send money to users)
+- `/saas` — SaaS Multi-Tenant (Nexus Pay only, KES 300/month or KES 1,000/year)
+- `/docs` — Integration documentation (publicly accessible, no login required)
+
+## SaaS Multi-Tenant (Nexus Pay only)
+
+Allows one merchant account to host many tenants (sub-merchants/clients):
+- Tenant = named client with their own settlement account
+- Each tenant auto-assigned a unique `tenantCode` (e.g. `tnnt_abc12345`)
+- STK Push supports `tenantCode` param to route payment to tenant's settlement account
+- Tables: `saas_subscriptions` (plan, status, expiry) and `saas_tenants`
+- API routes: `/api/saas/*` (auth required) and `/api/saas/tenant/:code` (API-key)
 
 ## Auth
 

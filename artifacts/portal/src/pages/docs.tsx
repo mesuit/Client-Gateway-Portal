@@ -737,9 +737,80 @@ if (data.status === 'completed') {
         </div>
       </section>
 
+      {/* ── SAAS MULTI-TENANT ────────────────────────────────────── */}
+      <section className="space-y-5">
+        <h3 className="text-xl font-bold">6. SaaS Multi-Tenant</h3>
+        <p className="text-muted-foreground">
+          The SaaS Multi-Tenant add-on lets you manage multiple clients (tenants) under a single merchant account.
+          Each tenant has a unique <strong>tenant code</strong> that routes STK Push payments directly to that tenant's settlement account.
+          Available on <strong>Nexus Pay</strong> only. Activate from the dashboard for <strong>KES 300/month</strong> or <strong>KES 1,000/year</strong>.
+        </p>
+
+        <div className="space-y-3">
+          <h4 className="font-semibold">How it works</h4>
+          <ol className="list-decimal list-inside space-y-1.5 text-sm text-muted-foreground">
+            <li>Activate the SaaS plan from the <strong>SaaS Multi-Tenant</strong> section in your dashboard.</li>
+            <li>Create tenants and assign each one a settlement account (till or paybill).</li>
+            <li>Each tenant is automatically assigned a unique <code className="bg-gray-100 rounded px-1">tenantCode</code> (e.g. <code className="bg-gray-100 rounded px-1">tnnt_abc12345</code>).</li>
+            <li>Pass the <code className="bg-gray-100 rounded px-1">tenantCode</code> in STK Push requests to route payments to that tenant.</li>
+          </ol>
+        </div>
+
+        <div className="space-y-2">
+          <h4 className="font-semibold">STK Push with tenantCode</h4>
+          <p className="text-sm text-muted-foreground">
+            Include <code className="bg-gray-100 rounded px-1">tenantCode</code> in the request body. It takes priority over <code className="bg-gray-100 rounded px-1">settlementAccountId</code>.
+          </p>
+          <pre className="bg-gray-900 text-green-300 text-xs rounded-lg p-4 overflow-x-auto">
+{`POST /api/payments/stkpush
+Authorization: Bearer YOUR_API_KEY
+
+{
+  "phoneNumber": "254712345678",
+  "amount": 1500,
+  "accountReference": "INV-001",
+  "transactionDesc": "Order Payment",
+  "tenantCode": "tnnt_abc12345"
+}`}
+          </pre>
+        </div>
+
+        <div className="space-y-2">
+          <h4 className="font-semibold">Look up a tenant (optional)</h4>
+          <p className="text-sm text-muted-foreground">Resolve a tenant's details by code using your API key:</p>
+          <pre className="bg-gray-900 text-green-300 text-xs rounded-lg p-4 overflow-x-auto">
+{`GET /api/saas/tenant/:tenantCode
+Authorization: Bearer YOUR_API_KEY`}
+          </pre>
+          <p className="text-sm text-muted-foreground">Response includes the tenant name, isActive flag, and settlement account info.</p>
+        </div>
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b">
+              <tr>
+                <th className="px-4 py-3 font-medium">Error Code</th>
+                <th className="px-4 py-3 font-medium">Meaning</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {[
+                ["TENANT_NOT_FOUND", "The tenantCode does not exist or is inactive"],
+                ["SAAS_NOT_ACTIVE", "Your SaaS subscription is not active — activate from the dashboard"],
+              ].map(([code, desc]) => (
+                <tr key={code}>
+                  <td className="px-4 py-3 font-mono text-red-600">{code}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* ── ERROR CODES ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">6. Error Codes</h3>
+        <h3 className="text-xl font-bold">7. Error Codes</h3>
         <div className="border rounded-lg overflow-hidden text-sm">
           <table className="w-full text-left">
             <thead className="bg-gray-50 dark:bg-gray-900 border-b">

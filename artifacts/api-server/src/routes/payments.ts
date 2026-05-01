@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { transactionsTable, settlementAccountsTable, apiKeysTable, usersTable } from "@workspace/db";
+import { transactionsTable, settlementAccountsTable, apiKeysTable, usersTable, saasTenantsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
@@ -12,7 +12,7 @@ const SANDBOX_LIMIT = 2;
 
 router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) => {
   const userId = req.apiKeyUserId!;
-  const { phoneNumber, amount, accountReference, transactionDesc, settlementAccountId } = req.body;
+  const { phoneNumber, amount, accountReference, transactionDesc, settlementAccountId, tenantCode } = req.body;
 
   if (!phoneNumber || !amount || !accountReference || !transactionDesc) {
     res.status(400).json({ error: "VALIDATION_ERROR", message: "phoneNumber, amount, accountReference, transactionDesc are required" });
@@ -51,10 +51,23 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
     }
   }
 
-  // Resolve settlement account
+  // Resolve settlement account (supports tenantCode as alias)
   let resolvedSettlement: { id: number; accountNumber: string; businessNumber: string | null; accountType: string } | null = null;
 
-  if (settlementAccountId) {
+  // tenantCode takes priority — look up tenant's settlement account
+  if (tenantCode) {
+    const [tenant] = await db.select().from(saasTenantsTable)
+      .where(and(eq(saasTenantsTable.tenantCode, tenantCode), eq(saasTenantsTable.userId, userId), eq(saasTenantsTable.isActive, true)));
+    if (!tenant) {
+      res.status(400).json({ error: "TENANT_NOT_FOUND", message: `Tenant '${tenantCode}' not found or inactive` });
+      return;
+    }
+    if (tenant.settlementAccountId) {
+      const [acct] = await db.select().from(settlementAccountsTable)
+        .where(and(eq(settlementAccountsTable.id, tenant.settlementAccountId), eq(settlementAccountsTable.isActive, true)));
+      if (acct) resolvedSettlement = acct;
+    }
+  } else if (settlementAccountId) {
     const accts = await db
       .select()
       .from(settlementAccountsTable)

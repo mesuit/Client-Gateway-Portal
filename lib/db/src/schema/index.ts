@@ -10,3 +10,5 @@ export * from "./b2c_transactions";
 export * from "./b2c_wallets";
 export * from "./b2c_topups";
 export * from "./pesapal_transactions";
+export * from "./saas_subscriptions";
+export * from "./saas_tenants";

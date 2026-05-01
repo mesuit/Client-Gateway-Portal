@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X, ArrowUpRight, CreditCard, FlaskConical } from "lucide-react";
+import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X, ArrowUpRight, CreditCard, FlaskConical, Layers, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -14,16 +14,17 @@ import { getAuthHeaders } from "@/hooks/use-auth";
 const API_BASE = typeof window !== "undefined" ? window.location.origin : "https://pay.makamesco-tech.co.ke";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Transactions", icon: Receipt },
-  { href: "/api-keys", label: "API Keys", icon: KeyRound },
-  { href: "/settlement", label: "Settlement", icon: Building2 },
-  { href: "/payment-links", label: "Payment Links", icon: Link2 },
-  { href: "/card", label: "Card & Airtel Pay", icon: CreditCard },
-  { href: "/card-test", label: "Test Card & Airtel Pay", icon: FlaskConical },
-  { href: "/b2c", label: "B2C Payments", icon: ArrowUpRight, tag: "Soon" },
-  { href: "/test", label: "STK Push Tester", icon: Smartphone },
-  { href: "/docs", label: "Documentation", icon: BookOpen },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, nexusOnly: false },
+  { href: "/transactions", label: "Transactions", icon: Receipt, nexusOnly: false },
+  { href: "/api-keys", label: "API Keys", icon: KeyRound, nexusOnly: false },
+  { href: "/settlement", label: "Settlement", icon: Building2, nexusOnly: false },
+  { href: "/payment-links", label: "Payment Links", icon: Link2, nexusOnly: false },
+  { href: "/card", label: "Card & Airtel Pay", icon: CreditCard, nexusOnly: false },
+  { href: "/card-test", label: "Test Card & Airtel Pay", icon: FlaskConical, nexusOnly: false },
+  { href: "/b2c", label: "B2C Payments", icon: ArrowUpRight, nexusOnly: false },
+  { href: "/saas", label: "SaaS Multi-Tenant", icon: Layers, nexusOnly: true },
+  { href: "/test", label: "STK Push Tester", icon: Smartphone, nexusOnly: false },
+  { href: "/docs", label: "Documentation", icon: BookOpen, nexusOnly: false },
 ];
 
 const HEISTTECH_PLANS = [
@@ -237,8 +238,8 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
-function NavContent({ location, onNav }: { location: string; onNav?: () => void }) {
-  const visibleItems = NAV_ITEMS;
+function NavContent({ location, onNav, isHeistTech }: { location: string; onNav?: () => void; isHeistTech: boolean }) {
+  const visibleItems = NAV_ITEMS.filter(item => !item.nexusOnly || !isHeistTech);
   return (
     <nav className="space-y-1">
       {visibleItems.map((item) => {
@@ -253,9 +254,9 @@ function NavContent({ location, onNav }: { location: string; onNav?: () => void 
             }`}>
               <Icon className="w-4 h-4 shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {"tag" in item && item.tag && (
-                <Badge className="text-[10px] px-1.5 py-0 h-4 bg-yellow-100 text-yellow-700 border-yellow-200 font-medium">
-                  {item.tag}
+              {item.nexusOnly && (
+                <Badge className="text-[10px] px-1.5 py-0 h-4 bg-purple-100 text-purple-700 border-purple-200 font-medium">
+                  SaaS
                 </Badge>
               )}
             </div>
@@ -302,7 +303,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </div>
 
         <div className="flex-1 overflow-y-auto py-6 px-4">
-          <NavContent location={location} />
+          <NavContent location={location} isHeistTech={isHeistTech} />
         </div>
 
         {isSandbox && (
@@ -404,7 +405,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
 
             {/* Nav items */}
             <div className="flex-1 overflow-y-auto py-4 px-3">
-              <NavContent location={location} onNav={() => setMobileMenuOpen(false)} />
+              <NavContent location={location} onNav={() => setMobileMenuOpen(false)} isHeistTech={isHeistTech} />
             </div>
 
             {/* Sandbox banner */}
