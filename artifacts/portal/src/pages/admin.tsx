@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import {
   Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp,
   ShieldCheck, BarChart3, Wallet, Settings, Shield, Eye, EyeOff,
   AlertTriangle, RefreshCw, Trash2, Save, KeyRound, Radio,
+  Search, Activity, Zap,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -68,6 +69,21 @@ interface SecurityEvent {
   createdAt: string;
 }
 
+interface AdminTransaction {
+  id: number;
+  type: "stk" | "b2c" | "pesapal";
+  merchantId: number | null;
+  merchantEmail: string | null;
+  merchantName: string | null;
+  phone: string | null;
+  amount: string;
+  status: string;
+  receipt: string | null;
+  description: string | null;
+  createdAt: string;
+  flags: string[];
+}
+
 function modeBadge(mode: string, sub: string | null, exp: string | null) {
   if (mode === "active") {
     const expired = exp && new Date(exp) < new Date();
@@ -112,6 +128,251 @@ const SETTING_LABELS: Record<string, { label: string; placeholder: string; sensi
 };
 
 const SETTING_GROUPS = ["General", "STK Push (C2B)", "B2C (Send Money)"];
+
+function typeBadge(type: "stk" | "b2c" | "pesapal") {
+  if (type === "stk") return <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">STK Push</span>;
+  if (type === "b2c") return <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700"><Zap className="w-3 h-3" />B2C</span>;
+  return <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Card/Airtel</span>;
+}
+
+function txStatusBadge(status: string) {
+  const map: Record<string, string> = {
+    completed: "bg-green-100 text-green-700",
+    failed: "bg-red-100 text-red-700",
+    pending: "bg-amber-100 text-amber-700",
+    processing: "bg-blue-100 text-blue-700",
+    cancelled: "bg-gray-100 text-gray-600",
+  };
+  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${map[status] ?? "bg-gray-100 text-gray-600"}`}>{status}</span>;
+}
+
+function TransactionsTab() {
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "stk" | "b2c" | "pesapal">("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showFlaggedOnly, setShowFlaggedOnly] = useState(false);
+
+  const { data: allTxs, isLoading, refetch, isFetching } = useQuery<AdminTransaction[]>({
+    queryKey: ["admin-transactions"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/transactions?limit=500`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed to load transactions");
+      return r.json();
+    },
+    refetchInterval: 60_000,
+  });
+
+  const stats = useMemo(() => {
+    const all = allTxs ?? [];
+    const done = (list: AdminTransaction[]) => list.filter(t => t.status === "completed").reduce((s, t) => s + Number(t.amount), 0);
+    const stk = all.filter(t => t.type === "stk");
+    const b2c = all.filter(t => t.type === "b2c");
+    const pp = all.filter(t => t.type === "pesapal");
+    return {
+      stkCount: stk.length, stkVolume: done(stk),
+      b2cCount: b2c.length, b2cVolume: done(b2c),
+      ppCount: pp.length, ppVolume: done(pp),
+      total: all.length,
+    };
+  }, [allTxs]);
+
+  const filtered = useMemo(() => {
+    let txs = allTxs ?? [];
+    if (typeFilter !== "all") txs = txs.filter(t => t.type === typeFilter);
+    if (statusFilter !== "all") txs = txs.filter(t => t.status === statusFilter);
+    if (showFlaggedOnly) txs = txs.filter(t => t.flags.length > 0);
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      txs = txs.filter(t =>
+        t.phone?.toLowerCase().includes(q) ||
+        t.receipt?.toLowerCase().includes(q) ||
+        t.merchantEmail?.toLowerCase().includes(q) ||
+        t.merchantName?.toLowerCase().includes(q) ||
+        t.description?.toLowerCase().includes(q)
+      );
+    }
+    return txs;
+  }, [allTxs, typeFilter, statusFilter, search, showFlaggedOnly]);
+
+  const flagged = useMemo(() => (allTxs ?? []).filter(t => t.flags.length > 0), [allTxs]);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-lg flex items-center gap-2">
+            <Activity className="w-5 h-5 text-blue-600" />
+            Transaction Monitor
+          </h3>
+          <p className="text-sm text-muted-foreground">Every transaction across all merchant accounts — STK Push, B2C, and Card/Airtel. Refreshes every 60s.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1">
+          <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { key: "stk" as const, label: "STK Push", count: stats.stkCount, volume: stats.stkVolume, color: "green" },
+          { key: "b2c" as const, label: "B2C Send", count: stats.b2cCount, volume: stats.b2cVolume, color: "purple" },
+          { key: "pesapal" as const, label: "Card / Airtel", count: stats.ppCount, volume: stats.ppVolume, color: "blue" },
+        ].map(({ key, label, count, volume, color }) => (
+          <Card
+            key={key}
+            onClick={() => setTypeFilter(typeFilter === key ? "all" : key)}
+            className={`cursor-pointer border-2 transition-all ${typeFilter === key ? `border-${color}-500 bg-${color}-50` : "border-transparent hover:border-gray-200"}`}
+          >
+            <CardContent className="pt-4 pb-3">
+              <div className={`text-xs font-semibold uppercase tracking-wide text-${color}-700 mb-1`}>{label}</div>
+              <div className="text-2xl font-bold">{count}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">KES {volume.toLocaleString()} completed</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {flagged.length > 0 && (
+        <button
+          onClick={() => setShowFlaggedOnly(v => !v)}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${
+            showFlaggedOnly ? "bg-red-50 border-red-400" : "bg-red-50/60 border-red-200 hover:bg-red-50"
+          }`}
+        >
+          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+          <div className="flex-1">
+            <span className="font-semibold text-red-700 text-sm">{flagged.length} suspicious transaction{flagged.length > 1 ? "s" : ""} flagged</span>
+            <span className="text-red-500 text-xs ml-2">
+              {showFlaggedOnly ? "Showing flagged only — click to clear" : "Large amounts, repeated failures, rapid succession · Click to filter"}
+            </span>
+          </div>
+          <Badge className="bg-red-500 text-white">{flagged.length}</Badge>
+        </button>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+          <Input
+            className="pl-9 text-sm h-9"
+            placeholder="Search phone, receipt, merchant…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-1">
+          {[
+            { key: "all", label: "All Types" },
+            { key: "stk", label: "STK Push" },
+            { key: "b2c", label: "B2C" },
+            { key: "pesapal", label: "Card/Airtel" },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTypeFilter(key as typeof typeFilter)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                typeFilter === key ? "bg-primary text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+          className="text-xs border rounded-lg px-3 py-2 bg-white h-9"
+        >
+          <option value="all">All Status</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+          <option value="pending">Pending</option>
+          <option value="processing">Processing</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      <p className="text-xs text-muted-foreground -mt-2">
+        Showing {filtered.length} of {stats.total} transactions
+        {showFlaggedOnly && <span className="ml-1 text-red-500 font-medium">· filtered to flagged only</span>}
+      </p>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 py-10 text-muted-foreground">
+          <Loader2 className="animate-spin w-4 h-4" /> Loading transactions…
+        </div>
+      )}
+
+      {!isLoading && filtered.length === 0 && (
+        <div className="flex flex-col items-center py-16 text-center text-muted-foreground gap-2">
+          <BarChart3 className="w-10 h-10 text-gray-300" />
+          <p className="font-medium">No transactions found</p>
+          <p className="text-sm">Try clearing the filters or search.</p>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b text-xs text-muted-foreground text-left">
+                <th className="px-3 py-2.5 font-medium">Type</th>
+                <th className="px-3 py-2.5 font-medium">Merchant</th>
+                <th className="px-3 py-2.5 font-medium">Phone</th>
+                <th className="px-3 py-2.5 font-medium">Amount</th>
+                <th className="px-3 py-2.5 font-medium">Status</th>
+                <th className="px-3 py-2.5 font-medium">Receipt / Ref</th>
+                <th className="px-3 py-2.5 font-medium">Date</th>
+                <th className="px-3 py-2.5 font-medium">Alerts</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filtered.map(tx => (
+                <tr
+                  key={`${tx.type}-${tx.id}`}
+                  className={`hover:bg-gray-50/80 ${
+                    tx.flags.includes("repeated_failure") ? "bg-red-50/50" :
+                    tx.flags.includes("rapid_succession") ? "bg-orange-50/50" :
+                    tx.flags.includes("large_amount") ? "bg-yellow-50/40" : ""
+                  }`}
+                >
+                  <td className="px-3 py-2">{typeBadge(tx.type)}</td>
+                  <td className="px-3 py-2">
+                    <div className="text-xs font-medium leading-tight">{tx.merchantName ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground leading-tight">{tx.merchantEmail ?? "—"}</div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">{tx.phone ?? "—"}</td>
+                  <td className="px-3 py-2 font-semibold text-xs whitespace-nowrap">
+                    KES {Number(tx.amount).toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-3 py-2">{txStatusBadge(tx.status)}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground max-w-[130px] truncate" title={tx.receipt ?? undefined}>
+                    {tx.receipt ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    {format(new Date(tx.createdAt), "MMM d, HH:mm")}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-col gap-0.5">
+                      {tx.flags.includes("large_amount") && (
+                        <span className="text-yellow-700 text-xs font-semibold bg-yellow-100 px-1.5 py-0.5 rounded whitespace-nowrap">💰 Large</span>
+                      )}
+                      {tx.flags.includes("repeated_failure") && (
+                        <span className="text-red-700 text-xs font-semibold bg-red-100 px-1.5 py-0.5 rounded whitespace-nowrap">🚨 Repeat Fail</span>
+                      )}
+                      {tx.flags.includes("rapid_succession") && (
+                        <span className="text-orange-700 text-xs font-semibold bg-orange-100 px-1.5 py-0.5 rounded whitespace-nowrap">⚡ Rapid</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SettingsTab() {
   const { toast } = useToast();
@@ -378,7 +639,7 @@ function SecurityTab() {
 export default function AdminPanel() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"withdrawals" | "users" | "settings" | "security">("withdrawals");
+  const [tab, setTab] = useState<"withdrawals" | "users" | "transactions" | "settings" | "security">("withdrawals");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
@@ -487,10 +748,11 @@ export default function AdminPanel() {
   const processed = withdrawals?.filter(w => w.status !== "pending") ?? [];
 
   const TABS = [
-    { key: "withdrawals", label: `Withdrawals (${pending.length} pending)` },
-    { key: "users", label: "Merchants" },
-    { key: "settings", label: "Settings" },
-    { key: "security", label: "Security" },
+    { key: "withdrawals", label: `Withdrawals (${pending.length} pending)`, icon: null },
+    { key: "users", label: "Merchants", icon: null },
+    { key: "transactions", label: "Transactions", icon: <Activity className="w-3.5 h-3.5" /> },
+    { key: "settings", label: "Settings", icon: <Settings className="w-3.5 h-3.5" /> },
+    { key: "security", label: "Security", icon: <Shield className="w-3.5 h-3.5" /> },
   ] as const;
 
   return (
@@ -567,8 +829,7 @@ export default function AdminPanel() {
               tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {t.key === "settings" && <Settings className="w-3.5 h-3.5" />}
-            {t.key === "security" && <Shield className="w-3.5 h-3.5" />}
+            {t.icon}
             {t.label}
           </button>
         ))}
@@ -667,6 +928,7 @@ export default function AdminPanel() {
         </div>
       )}
 
+      {tab === "transactions" && <TransactionsTab />}
       {tab === "settings" && <SettingsTab />}
       {tab === "security" && <SecurityTab />}
 

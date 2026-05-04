@@ -7,6 +7,8 @@ import {
   withdrawalRequestsTable,
   systemSettingsTable,
   securityEventsTable,
+  b2cTransactionsTable,
+  pesapalTransactionsTable,
 } from "@workspace/db";
 import { eq, count, sql, isNull, desc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
@@ -311,6 +313,115 @@ router.put("/admin/settings", requireAuth, requireAdmin, async (req: AuthRequest
   invalidateMpesaSettingsCache();
 
   res.json({ message: `${toUpsert.length} setting(s) saved successfully` });
+});
+
+// ─── Transaction Monitor ──────────────────────────────────────────────────────
+
+// GET /admin/transactions — all transactions across all accounts, merged + fraud-flagged
+router.get("/admin/transactions", requireAuth, requireAdmin, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 500, 2000);
+
+  // STK Push transactions
+  const stkRows = await db
+    .select({
+      id: transactionsTable.id,
+      type: sql<string>`'stk'`,
+      merchantId: transactionsTable.userId,
+      merchantEmail: usersTable.email,
+      merchantName: usersTable.businessName,
+      phone: transactionsTable.phoneNumber,
+      amount: transactionsTable.amount,
+      status: transactionsTable.status,
+      receipt: transactionsTable.mpesaReceiptNumber,
+      description: transactionsTable.transactionDesc,
+      createdAt: transactionsTable.createdAt,
+    })
+    .from(transactionsTable)
+    .leftJoin(usersTable, eq(transactionsTable.userId, usersTable.id))
+    .orderBy(desc(transactionsTable.createdAt))
+    .limit(limit);
+
+  // B2C outgoing transactions
+  const b2cRows = await db
+    .select({
+      id: b2cTransactionsTable.id,
+      type: sql<string>`'b2c'`,
+      merchantId: b2cTransactionsTable.userId,
+      merchantEmail: usersTable.email,
+      merchantName: usersTable.businessName,
+      phone: b2cTransactionsTable.phoneNumber,
+      amount: b2cTransactionsTable.amount,
+      status: b2cTransactionsTable.status,
+      receipt: b2cTransactionsTable.mpesaReceiptNumber,
+      description: b2cTransactionsTable.remarks,
+      createdAt: b2cTransactionsTable.createdAt,
+    })
+    .from(b2cTransactionsTable)
+    .leftJoin(usersTable, eq(b2cTransactionsTable.userId, usersTable.id))
+    .orderBy(desc(b2cTransactionsTable.createdAt))
+    .limit(limit);
+
+  // PesaPal (card / Airtel) transactions
+  const pesapalRows = await db
+    .select({
+      id: pesapalTransactionsTable.id,
+      type: sql<string>`'pesapal'`,
+      merchantId: pesapalTransactionsTable.userId,
+      merchantEmail: usersTable.email,
+      merchantName: usersTable.businessName,
+      phone: pesapalTransactionsTable.phoneNumber,
+      amount: pesapalTransactionsTable.amount,
+      status: pesapalTransactionsTable.status,
+      receipt: pesapalTransactionsTable.orderTrackingId,
+      description: pesapalTransactionsTable.description,
+      createdAt: pesapalTransactionsTable.createdAt,
+    })
+    .from(pesapalTransactionsTable)
+    .leftJoin(usersTable, eq(pesapalTransactionsTable.userId, usersTable.id))
+    .orderBy(desc(pesapalTransactionsTable.createdAt))
+    .limit(limit);
+
+  // Merge and sort all by createdAt desc
+  const merged = [...stkRows, ...b2cRows, ...pesapalRows]
+    .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+    .slice(0, limit);
+
+  // Build phone → failed count map for repeated failure detection
+  const phoneFailCount: Record<string, number> = {};
+  for (const tx of merged) {
+    if (tx.status === "failed" && tx.phone) {
+      phoneFailCount[tx.phone] = (phoneFailCount[tx.phone] ?? 0) + 1;
+    }
+  }
+
+  // Build merchantId → timestamps list for rapid succession detection
+  const merchantTimes: Record<number, number[]> = {};
+  for (const tx of merged) {
+    if (tx.merchantId && tx.createdAt) {
+      if (!merchantTimes[tx.merchantId]) merchantTimes[tx.merchantId] = [];
+      merchantTimes[tx.merchantId].push(new Date(tx.createdAt).getTime());
+    }
+  }
+
+  const result = merged.map(tx => {
+    const flags: string[] = [];
+    const amt = Number(tx.amount);
+    if (amt >= 50000) flags.push("large_amount");
+    if (tx.status === "failed" && tx.phone && (phoneFailCount[tx.phone] ?? 0) >= 3) {
+      flags.push("repeated_failure");
+    }
+    // Rapid succession: merchant made 5+ transactions within any 5-minute window
+    if (tx.merchantId && merchantTimes[tx.merchantId]) {
+      const times = merchantTimes[tx.merchantId];
+      const txTime = new Date(tx.createdAt!).getTime();
+      const window = 5 * 60 * 1000;
+      const nearby = times.filter(t => Math.abs(t - txTime) <= window);
+      if (nearby.length >= 5) flags.push("rapid_succession");
+    }
+    return { ...tx, amount: String(tx.amount), flags };
+  });
+
+  res.json(result);
 });
 
 // ─── Security Events ──────────────────────────────────────────────────────────
