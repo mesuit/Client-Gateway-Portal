@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { b2cTransactionsTable } from "@workspace/db";
+import { b2cTransactionsTable, withdrawalRequestsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuthOrApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
@@ -227,6 +227,31 @@ router.post("/payments/b2c/result", async (req, res) => {
       })
       .where(eq(b2cTransactionsTable.conversationId, conversationId));
 
+    // Also resolve any auto-withdrawal request tied to this conversationId
+    try {
+      const [withdrawal] = await db
+        .select()
+        .from(withdrawalRequestsTable)
+        .where(eq(withdrawalRequestsTable.b2cConversationId, conversationId));
+
+      if (withdrawal) {
+        await db
+          .update(withdrawalRequestsTable)
+          .set({
+            status: status === "completed" ? "completed" : "failed",
+            processedAt: status === "completed" ? new Date() : undefined,
+            note: status === "completed"
+              ? `Auto-processed via B2C. Receipt: ${mpesaReceiptNumber ?? "N/A"}`
+              : `B2C auto-withdrawal failed: ${resultDesc}`,
+          })
+          .where(eq(withdrawalRequestsTable.id, withdrawal.id));
+
+        logger.info({ withdrawalId: withdrawal.id, conversationId, status }, "Auto-withdrawal resolved from B2C result");
+      }
+    } catch (wErr) {
+      logger.error(wErr, "Failed to update auto-withdrawal from B2C result");
+    }
+
     logger.info({ conversationId, status, resultCode }, "B2C result received");
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (err) {
@@ -240,11 +265,23 @@ router.post("/payments/b2c/timeout", async (req, res) => {
   try {
     const result = req.body?.Result;
     if (result?.ConversationID) {
+      const cid: string = result.ConversationID;
       await db
         .update(b2cTransactionsTable)
         .set({ status: "failed", resultDescription: "Transaction timed out" })
-        .where(eq(b2cTransactionsTable.conversationId, result.ConversationID));
-      logger.warn({ conversationId: result.ConversationID }, "B2C timeout received");
+        .where(eq(b2cTransactionsTable.conversationId, cid));
+
+      // Also fail any auto-withdrawal tied to this conversationId
+      try {
+        await db
+          .update(withdrawalRequestsTable)
+          .set({ status: "failed", note: "B2C auto-withdrawal timed out — please retry" })
+          .where(eq(withdrawalRequestsTable.b2cConversationId, cid));
+      } catch (wErr) {
+        logger.error(wErr, "Failed to update auto-withdrawal from B2C timeout");
+      }
+
+      logger.warn({ conversationId: cid }, "B2C timeout received");
     }
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (err) {

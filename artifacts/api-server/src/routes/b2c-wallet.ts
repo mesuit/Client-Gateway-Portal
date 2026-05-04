@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { b2cWalletsTable, b2cTopupsTable } from "@workspace/db";
 import { eq, sql, desc } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../lib/auth";
+import { requireAuthOrApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
@@ -49,9 +49,9 @@ export async function refundWallet(userId: number, totalDeducted: number) {
     .where(eq(b2cWalletsTable.userId, userId));
 }
 
-// GET /api/b2c/wallet — get balance + recent topups
-router.get("/b2c/wallet", requireAuth, async (req: AuthRequest, res) => {
-  const userId = req.userId!;
+// GET /api/b2c/wallet — get balance + recent topups (session OR API key)
+router.get("/b2c/wallet", requireAuthOrApiKey, async (req: ApiKeyRequest, res) => {
+  const userId = req.apiKeyUserId!;
   const wallet = await getOrCreateWallet(userId);
   const topups = await db
     .select()
@@ -70,9 +70,9 @@ router.get("/b2c/wallet", requireAuth, async (req: AuthRequest, res) => {
   });
 });
 
-// POST /api/b2c/wallet/topup — initiate STK Push to top up wallet
-router.post("/b2c/wallet/topup", requireAuth, async (req: AuthRequest, res) => {
-  const userId = req.userId!;
+// POST /api/b2c/wallet/topup — initiate STK Push to top up wallet (session OR API key)
+router.post("/b2c/wallet/topup", requireAuthOrApiKey, async (req: ApiKeyRequest, res) => {
+  const userId = req.apiKeyUserId!;
   const { phoneNumber, amount } = req.body;
 
   if (!phoneNumber || !amount) {
@@ -161,8 +161,8 @@ router.post("/b2c/wallet/topup/callback", async (req, res) => {
   }
 });
 
-// GET /api/b2c/wallet/topup/status/:checkoutRequestId
-router.get("/b2c/wallet/topup/status/:checkoutRequestId", requireAuth, async (req: AuthRequest, res) => {
+// GET /api/b2c/wallet/topup/status/:checkoutRequestId (session OR API key)
+router.get("/b2c/wallet/topup/status/:checkoutRequestId", requireAuthOrApiKey, async (req: ApiKeyRequest, res) => {
   const { checkoutRequestId } = req.params;
   res.set("Cache-Control", "no-store");
 

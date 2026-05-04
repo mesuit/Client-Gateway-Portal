@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowUpRight, Send, RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Phone, DollarSign, Wallet, Plus, Info } from "lucide-react";
+import { ArrowUpRight, Send, RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Phone, DollarSign, Wallet, Plus, Info, Terminal, Eye, EyeOff } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +78,16 @@ export default function B2CPage() {
   const [commandId, setCommandId] = useState("BusinessPayment");
   const [sending, setSending] = useState(false);
   const [sendPollId, setSendPollId] = useState<string | null>(null);
+
+  // API Test state
+  const [testApiKey, setTestApiKey] = useState("");
+  const [showTestKey, setShowTestKey] = useState(false);
+  const [testPhone, setTestPhone] = useState("");
+  const [testAmount, setTestAmount] = useState("");
+  const [testRemarks, setTestRemarks] = useState("Test payment");
+  const [testCommandId, setTestCommandId] = useState("BusinessPayment");
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResponse, setTestResponse] = useState<{ ok: boolean; status: number; data: unknown } | null>(null);
 
   const fetchWallet = useCallback(async () => {
     setLoadingWallet(true);
@@ -204,11 +214,48 @@ export default function B2CPage() {
     } finally { setSending(false); }
   }
 
+  async function handleApiTest() {
+    if (!testApiKey || !testPhone || !testAmount || !testRemarks) return;
+    setTestRunning(true);
+    setTestResponse(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/payments/b2c`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": testApiKey.trim(),
+        },
+        body: JSON.stringify({
+          phoneNumber: testPhone,
+          amount: Number(testAmount),
+          remarks: testRemarks,
+          commandId: testCommandId,
+        }),
+      });
+      const data = await res.json();
+      setTestResponse({ ok: res.ok, status: res.status, data });
+    } catch (err) {
+      setTestResponse({ ok: false, status: 0, data: { error: "NETWORK_ERROR", message: err instanceof Error ? err.message : "Request failed" } });
+    } finally {
+      setTestRunning(false);
+    }
+  }
+
   const sendAmt = Number(amount) || 0;
   const fee = parseFloat((sendAmt * FEE_RATE).toFixed(2));
   const total = parseFloat((sendAmt + fee).toFixed(2));
   const balance = Number(wallet?.balance ?? 0);
   const canSend = balance >= total && total > 0;
+
+  const curlPreview = `curl -X POST ${API_BASE}/api/payments/b2c \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: ${testApiKey || "sk_YOUR_SECRET_KEY"}" \\
+  -d '{
+    "phoneNumber": "${testPhone || "2547XXXXXXXX"}",
+    "amount": ${testAmount || "100"},
+    "remarks": "${testRemarks || "Test payment"}",
+    "commandId": "${testCommandId}"
+  }'`;
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -253,6 +300,7 @@ export default function B2CPage() {
         <TabsList>
           <TabsTrigger value="send"><Send className="w-4 h-4 mr-1" />Send Money</TabsTrigger>
           <TabsTrigger value="topup"><Plus className="w-4 h-4 mr-1" />Top Up Wallet</TabsTrigger>
+          <TabsTrigger value="apitest"><Terminal className="w-4 h-4 mr-1" />API Test</TabsTrigger>
         </TabsList>
 
         {/* Send Tab */}
@@ -404,6 +452,163 @@ export default function B2CPage() {
                 <p>4. Use the balance to send B2C payments (8% fee per transaction goes to the platform)</p>
               </CardContent>
             </Card>
+          </div>
+        </TabsContent>
+
+        {/* API Test Tab */}
+        <TabsContent value="apitest">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+            {/* Left: Input form */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-purple-600" /> B2C API Tester
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-800">
+                  Test the live B2C disbursement endpoint using your Secret Key. Your Secret Key is shown once when you create an API key — find it in the <strong>API Keys</strong> section of the sidebar.
+                </div>
+
+                {/* API Key */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Secret Key</Label>
+                  <div className="relative">
+                    <Input
+                      type={showTestKey ? "text" : "password"}
+                      placeholder="sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      value={testApiKey}
+                      onChange={e => setTestApiKey(e.target.value)}
+                      className="pr-10 font-mono text-xs"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowTestKey(v => !v)}
+                    >
+                      {showTestKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Phone + Amount */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Phone</Label>
+                    <Input
+                      placeholder="2547XXXXXXXX"
+                      value={testPhone}
+                      onChange={e => setTestPhone(e.target.value)}
+                      className="text-sm font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Amount (KES)</Label>
+                    <Input
+                      type="number"
+                      min={10}
+                      placeholder="100"
+                      value={testAmount}
+                      onChange={e => setTestAmount(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Remarks</Label>
+                  <Input
+                    placeholder="e.g. Test payment"
+                    value={testRemarks}
+                    onChange={e => setTestRemarks(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+
+                {/* Command ID */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Command ID</Label>
+                  <Select value={testCommandId} onValueChange={setTestCommandId}>
+                    <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BusinessPayment">BusinessPayment</SelectItem>
+                      <SelectItem value="SalaryPayment">SalaryPayment</SelectItem>
+                      <SelectItem value="PromotionPayment">PromotionPayment</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  className="w-full bg-purple-600 hover:bg-purple-700"
+                  onClick={handleApiTest}
+                  disabled={testRunning || !testApiKey.trim() || !testPhone.trim() || !testAmount || !testRemarks.trim()}
+                >
+                  {testRunning
+                    ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Sending request…</>
+                    : <><Send className="w-4 h-4 mr-2" />Run Test</>}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Right: cURL + Response */}
+            <div className="space-y-4">
+              {/* cURL preview */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5" /> cURL Equivalent
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <pre className="bg-gray-950 text-green-300 text-xs p-4 rounded-b-lg overflow-x-auto font-mono whitespace-pre-wrap break-all">
+                    {curlPreview}
+                  </pre>
+                </CardContent>
+              </Card>
+
+              {/* Response viewer */}
+              {(testResponse !== null || testRunning) && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs font-medium flex items-center gap-2">
+                      Response
+                      {testResponse && (
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                          testResponse.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
+                        }`}>
+                          {testResponse.status === 0 ? "Network Error" : `HTTP ${testResponse.status}`}
+                        </span>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {testRunning ? (
+                      <div className="bg-gray-950 text-gray-500 text-xs p-4 rounded-b-lg font-mono animate-pulse">
+                        Waiting for response…
+                      </div>
+                    ) : (
+                      <pre className={`text-xs p-4 rounded-b-lg overflow-x-auto font-mono whitespace-pre-wrap ${
+                        testResponse?.ok ? "bg-gray-950 text-gray-50" : "bg-gray-950 text-red-300"
+                      }`}>
+                        {JSON.stringify(testResponse?.data, null, 2)}
+                      </pre>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Hint box */}
+              {testResponse === null && !testRunning && (
+                <Card className="border-gray-100 bg-gray-50">
+                  <CardContent className="pt-4 text-xs text-muted-foreground space-y-1.5">
+                    <p className="font-medium text-gray-700">What this tests</p>
+                    <p>Calls <code className="bg-gray-100 px-1 rounded font-mono">POST /api/payments/b2c</code> with your Secret Key in the <code className="bg-gray-100 px-1 rounded font-mono">X-API-Key</code> header — exactly as an external system would call it.</p>
+                    <p className="text-amber-700 font-medium mt-2">⚠ This sends a real B2C payment. Make sure your wallet has sufficient balance (amount + 8% fee).</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </div>
         </TabsContent>
       </Tabs>

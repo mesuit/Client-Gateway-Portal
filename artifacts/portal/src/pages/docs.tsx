@@ -631,12 +631,59 @@ if (status === 'completed') {
           <p><strong>8% platform fee</strong> is charged per B2C transaction. Example: sending <strong>KES 1,000</strong> deducts <strong>KES 1,080</strong> from your wallet (KES 1,000 sent + KES 80 fee). Top up your wallet from the <strong>B2C Payments</strong> page in your dashboard.</p>
         </div>
         <div className="border rounded-lg overflow-hidden text-sm">
-          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 1 — Get your B2C wallet balance</div>
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 1 — Top up your B2C wallet (collect funds in)</div>
+          <CodeBlock
+            curl={`# First, send an STK Push to fund your B2C wallet
+curl -X POST ${BASE}/api/b2c/wallet/topup \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{
+    "phoneNumber": "254712345678",
+    "amount": 5000
+  }'`}
+            node={`// Send an STK Push to fund your B2C wallet
+const res = await fetch('${BASE}/api/b2c/wallet/topup', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': 'YOUR_SECRET_KEY'
+  },
+  body: JSON.stringify({
+    phoneNumber: '254712345678',   // phone that will pay (yours or client's)
+    amount: 5000                   // amount in KES to load into wallet
+  })
+});
+const { checkoutRequestId, customerMessage } = await res.json();
+// checkoutRequestId — use to poll top-up status
+// An STK Push is sent to the phone immediately`}
+          />
+        </div>
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 2 — Poll top-up status</div>
+          <CodeBlock
+            curl={`curl ${BASE}/api/b2c/wallet/topup/status/ws_CO_24042026_123456 \\
+  -H "X-API-Key: YOUR_SECRET_KEY"`}
+            node={`// Poll until the top-up is confirmed (customer paid STK Push)
+const res = await fetch(
+  \`${BASE}/api/b2c/wallet/topup/status/\${checkoutRequestId}\`,
+  { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
+);
+const { status, amount } = await res.json();
+// status: 'pending' | 'completed' | 'failed'
+if (status === 'completed') {
+  console.log(\`KES \${amount} loaded into B2C wallet\`);
+}`}
+          />
+        </div>
+
+        <div className="border rounded-lg overflow-hidden text-sm">
+          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 3 — Check wallet balance</div>
           <CodeBlock
             curl={`curl ${BASE}/api/b2c/wallet \\
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN"`}
+  -H "X-API-Key: YOUR_SECRET_KEY"`}
             node={`const res = await fetch('${BASE}/api/b2c/wallet', {
-  headers: { 'Authorization': 'Bearer YOUR_SESSION_TOKEN' }
+  headers: { 'X-API-Key': 'YOUR_SECRET_KEY' }
 });
 const { balance, totalFees, feeRate } = await res.json();
 // balance — available to spend (KES)

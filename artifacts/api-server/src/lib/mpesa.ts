@@ -13,6 +13,17 @@ interface SettingsCache {
 let settingsCache: SettingsCache | null = null;
 const SETTINGS_CACHE_TTL = 30_000; // 30 seconds
 
+export async function isB2CConfigured(): Promise<boolean> {
+  const settings = await getSystemSettings();
+  const initiatorName =
+    (settings["mpesa_initiator_name"]?.trim()) ?? process.env.MPESA_INITIATOR_NAME ?? "";
+  const secCred =
+    (settings["mpesa_security_credential"]?.trim()) ?? process.env.MPESA_SECURITY_CREDENTIAL ?? "";
+  const initPass =
+    (settings["mpesa_initiator_password"]?.trim()) ?? process.env.MPESA_INITIATOR_PASSWORD ?? "";
+  return !!(initiatorName && (secCred || initPass));
+}
+
 export function invalidateMpesaSettingsCache(): void {
   settingsCache = null;
   cachedToken = null;

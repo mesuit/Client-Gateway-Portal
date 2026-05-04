@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import { transactionsTable, withdrawalRequestsTable, pesapalTransactionsTable } from "@workspace/db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
+import { isB2CConfigured, initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -95,14 +97,72 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
+  // Normalise phone to 254XXXXXXXXX
+  let formattedPhone = String(phone).replace(/\D/g, "");
+  if (formattedPhone.startsWith("0")) formattedPhone = "254" + formattedPhone.slice(1);
+  if (!formattedPhone.startsWith("254")) formattedPhone = "254" + formattedPhone;
+
+  // ── Auto-disburse via B2C if credentials are configured ──────────────────
+  const b2cReady = await isB2CConfigured();
+
+  if (b2cReady) {
+    const baseUrl = getCallbackBaseUrl(req);
+    const resultUrl  = `${baseUrl}/api/payments/b2c/result`;
+    const timeoutUrl = `${baseUrl}/api/payments/b2c/timeout`;
+
+    try {
+      const b2cResult = await initiateB2C({
+        phoneNumber: formattedPhone,
+        amount: requestAmount,
+        commandId: "BusinessPayment",
+        remarks: "Wallet withdrawal payout",
+        resultUrl,
+        timeoutUrl,
+      });
+
+      const [request] = await db.insert(withdrawalRequestsTable).values({
+        userId: req.userId!,
+        amount: String(requestAmount),
+        phone: formattedPhone,
+        status: "processing",
+        note: "Auto-processed via B2C",
+        b2cConversationId: b2cResult.ConversationID,
+        autoProcessed: "true",
+      }).returning();
+
+      logger.info(
+        { userId: req.userId, amount: requestAmount, conversationId: b2cResult.ConversationID },
+        "Auto-withdrawal B2C initiated"
+      );
+
+      res.status(201).json({
+        ...request,
+        autoProcessed: true,
+        message: "Your withdrawal is being processed automatically via M-Pesa B2C",
+      });
+      return;
+    } catch (err) {
+      // B2C initiation failed — fall through to manual queue
+      logger.error({ err }, "Auto-withdrawal B2C initiation failed, falling back to manual");
+    }
+  }
+
+  // ── Manual fallback (no B2C creds, or B2C call failed) ───────────────────
   const [request] = await db.insert(withdrawalRequestsTable).values({
     userId: req.userId!,
     amount: String(requestAmount),
-    phone: String(phone).replace(/\D/g, ""),
+    phone: formattedPhone,
     status: "pending",
+    note: b2cReady ? "B2C auto-processing failed — queued for manual review" : undefined,
   }).returning();
 
-  res.status(201).json(request);
+  res.status(201).json({
+    ...request,
+    autoProcessed: false,
+    message: b2cReady
+      ? "B2C processing unavailable. Your withdrawal has been queued for manual review."
+      : "Your withdrawal request has been queued for manual review.",
+  });
 });
 
 export default router;
