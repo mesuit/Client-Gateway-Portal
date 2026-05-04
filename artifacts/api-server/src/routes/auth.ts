@@ -3,17 +3,16 @@ import { db } from "@workspace/db";
 import { usersTable, sessionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, createSession, requireAuth, invalidateSessionCache, type AuthRequest } from "../lib/auth";
+import { logSecurityEvent } from "../lib/securityLogger";
 
 const router = Router();
 
 function safeUser(user: typeof usersTable.$inferSelect) {
   const now = new Date();
   let effectiveMode = user.mode;
-  // Monthly subscription expiry check
   if (user.mode === "active" && user.subscriptionType === "monthly" && user.subscriptionExpiresAt) {
     if (new Date(user.subscriptionExpiresAt) < now) effectiveMode = "sandbox";
   }
-  // Yearly subscription expiry check
   if (user.mode === "active" && user.subscriptionType === "yearly" && user.subscriptionExpiresAt) {
     if (new Date(user.subscriptionExpiresAt) < now) effectiveMode = "sandbox";
   }
@@ -73,17 +72,40 @@ router.post("/auth/login", async (req, res) => {
 
   const users = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase()));
   if (users.length === 0) {
+    logSecurityEvent({
+      eventType: "failed_login",
+      severity: "low",
+      description: `Login attempt for non-existent account: ${email.toLowerCase()}`,
+      req,
+      email: email.toLowerCase(),
+    });
     res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Invalid email or password" });
     return;
   }
 
   const user = users[0];
   if (!verifyPassword(password, user.passwordHash)) {
+    logSecurityEvent({
+      eventType: "failed_login",
+      severity: "medium",
+      description: `Failed login attempt (wrong password) for: ${user.email}`,
+      req,
+      userId: user.id,
+      email: user.email,
+    });
     res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Invalid email or password" });
     return;
   }
 
   if (!user.isActive) {
+    logSecurityEvent({
+      eventType: "failed_login",
+      severity: "high",
+      description: `Login attempt on disabled account: ${user.email}`,
+      req,
+      userId: user.id,
+      email: user.email,
+    });
     res.status(403).json({ error: "ACCOUNT_DISABLED", message: "Your account has been disabled" });
     return;
   }

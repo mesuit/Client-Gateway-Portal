@@ -1,22 +1,38 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { usersTable, settlementAccountsTable, transactionsTable, withdrawalRequestsTable } from "@workspace/db";
-import { eq, count, sql, isNull } from "drizzle-orm";
+import {
+  usersTable,
+  settlementAccountsTable,
+  transactionsTable,
+  withdrawalRequestsTable,
+  systemSettingsTable,
+  securityEventsTable,
+} from "@workspace/db";
+import { eq, count, sql, isNull, desc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
+import { logSecurityEvent } from "../lib/securityLogger";
+import { invalidateMpesaSettingsCache } from "../lib/mpesa";
 
 const router = Router();
 
-// Middleware: require isAdmin flag
 async function requireAdmin(req: AuthRequest, res: any, next: any) {
-  const [user] = await db.select({ isAdmin: usersTable.isAdmin }).from(usersTable).where(eq(usersTable.id, req.userId!));
+  const [user] = await db.select({ isAdmin: usersTable.isAdmin, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, req.userId!));
   if (!user?.isAdmin) {
+    logSecurityEvent({
+      eventType: "unauthorized_admin",
+      severity: "high",
+      description: `Non-admin user attempted to access admin route: ${req.method} ${req.path}`,
+      req,
+      userId: req.userId,
+      email: user?.email,
+    });
     res.status(403).json({ error: "FORBIDDEN", message: "Admin access required" });
     return;
   }
   next();
 }
 
-// GET /admin/stats — platform-wide totals
+// GET /admin/stats
 router.get("/admin/stats", requireAuth, requireAdmin, async (req, res) => {
   const [txStats] = await db.select({
     totalTransactions: sql<number>`COUNT(*)`,
@@ -24,7 +40,6 @@ router.get("/admin/stats", requireAuth, requireAdmin, async (req, res) => {
     totalVolume: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN amount::numeric ELSE 0 END), 0)::text`,
   }).from(transactionsTable);
 
-  // Platform wallet = completed transactions with no settlement account (money collected by platform)
   const [walletStats] = await db.select({
     walletBalance: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN amount::numeric ELSE 0 END), 0)::text`,
     walletTxCount: sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
@@ -48,7 +63,7 @@ router.get("/admin/stats", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
-// GET /admin/users — list all users
+// GET /admin/users
 router.get("/admin/users", requireAuth, requireAdmin, async (req, res) => {
   const users = await db
     .select({
@@ -71,7 +86,7 @@ router.get("/admin/users", requireAuth, requireAdmin, async (req, res) => {
   res.json(users);
 });
 
-// GET /admin/users/:id — user detail
+// GET /admin/users/:id
 router.get("/admin/users/:id", requireAuth, requireAdmin, async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid user ID" }); return; }
@@ -106,7 +121,7 @@ router.get("/admin/users/:id", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
-// POST /admin/users/:id/revoke — revoke active status, return to sandbox
+// POST /admin/users/:id/revoke
 router.post("/admin/users/:id/revoke", requireAuth, requireAdmin, async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid user ID" }); return; }
@@ -122,7 +137,7 @@ router.post("/admin/users/:id/revoke", requireAuth, requireAdmin, async (req, re
   res.json({ message: "User revoked to sandbox" });
 });
 
-// POST /admin/users/:id/activate — manually activate a user
+// POST /admin/users/:id/activate
 router.post("/admin/users/:id/activate", requireAuth, requireAdmin, async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid user ID" }); return; }
@@ -143,7 +158,7 @@ router.post("/admin/users/:id/activate", requireAuth, requireAdmin, async (req, 
   res.json({ message: "User activated successfully" });
 });
 
-// GET /admin/withdrawals — list withdrawal requests with user info
+// GET /admin/withdrawals
 router.get("/admin/withdrawals", requireAuth, requireAdmin, async (req, res) => {
   const rows = await db
     .select({
@@ -165,7 +180,7 @@ router.get("/admin/withdrawals", requireAuth, requireAdmin, async (req, res) => 
   res.json(rows);
 });
 
-// GET /admin/withdrawals/:id — withdrawal detail with settlement accounts
+// GET /admin/withdrawals/:id
 router.get("/admin/withdrawals/:id", requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid ID" }); return; }
@@ -192,13 +207,12 @@ router.get("/admin/withdrawals/:id", requireAuth, requireAdmin, async (req, res)
   res.json({ withdrawal: row, settlements });
 });
 
-// POST /admin/withdrawals/:id/complete — mark as complete (manual process)
+// POST /admin/withdrawals/:id/complete
 router.post("/admin/withdrawals/:id/complete", requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid ID" }); return; }
 
   const { note } = req.body;
-
   const rows = await db.update(withdrawalRequestsTable).set({
     status: "completed",
     note: note || null,
@@ -206,17 +220,15 @@ router.post("/admin/withdrawals/:id/complete", requireAuth, requireAdmin, async 
   }).where(eq(withdrawalRequestsTable.id, id)).returning();
 
   if (rows.length === 0) { res.status(404).json({ error: "NOT_FOUND", message: "Withdrawal not found" }); return; }
-
   res.json({ message: "Withdrawal marked as complete", withdrawal: rows[0] });
 });
 
-// POST /admin/withdrawals/:id/reject — reject a withdrawal
+// POST /admin/withdrawals/:id/reject
 router.post("/admin/withdrawals/:id/reject", requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid ID" }); return; }
 
   const { note } = req.body;
-
   const rows = await db.update(withdrawalRequestsTable).set({
     status: "rejected",
     note: note || null,
@@ -224,8 +236,102 @@ router.post("/admin/withdrawals/:id/reject", requireAuth, requireAdmin, async (r
   }).where(eq(withdrawalRequestsTable.id, id)).returning();
 
   if (rows.length === 0) { res.status(404).json({ error: "NOT_FOUND", message: "Withdrawal not found" }); return; }
-
   res.json({ message: "Withdrawal rejected", withdrawal: rows[0] });
+});
+
+// ─── System Settings ──────────────────────────────────────────────────────────
+
+const SETTING_KEYS = [
+  "mpesa_consumer_key",
+  "mpesa_consumer_secret",
+  "mpesa_passkey",
+  "mpesa_shortcode",
+  "b2c_consumer_key",
+  "b2c_consumer_secret",
+  "b2c_shortcode",
+  "mpesa_initiator_name",
+  "mpesa_security_credential",
+  "mpesa_initiator_password",
+  "callback_base_url",
+];
+
+// GET /admin/settings — returns current settings (sensitive values masked)
+router.get("/admin/settings", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const rows = await db.select().from(systemSettingsTable);
+  const settingsMap: Record<string, string | null> = {};
+  for (const row of rows) {
+    settingsMap[row.key] = row.value;
+  }
+
+  const SENSITIVE = ["mpesa_consumer_secret", "mpesa_passkey", "mpesa_security_credential", "mpesa_initiator_password", "b2c_consumer_secret"];
+
+  const result = SETTING_KEYS.map(key => ({
+    key,
+    value: settingsMap[key] ?? null,
+    masked: SENSITIVE.includes(key) && !!settingsMap[key],
+    updatedAt: rows.find(r => r.key === key)?.updatedAt ?? null,
+  }));
+
+  res.json(result);
+});
+
+// PUT /admin/settings — upsert settings
+router.put("/admin/settings", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const updates: Record<string, string> = req.body;
+
+  if (!updates || typeof updates !== "object") {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "Body must be a key-value object" });
+    return;
+  }
+
+  const allowedKeys = new Set(SETTING_KEYS);
+  const toUpsert: { key: string; value: string; updatedBy: number }[] = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (!allowedKeys.has(key)) continue;
+    if (typeof value !== "string") continue;
+    toUpsert.push({ key, value: value.trim(), updatedBy: req.userId! });
+  }
+
+  if (toUpsert.length === 0) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "No valid settings provided" });
+    return;
+  }
+
+  for (const item of toUpsert) {
+    await db
+      .insert(systemSettingsTable)
+      .values({ key: item.key, value: item.value, updatedBy: item.updatedBy })
+      .onConflictDoUpdate({
+        target: systemSettingsTable.key,
+        set: { value: item.value, updatedBy: item.updatedBy, updatedAt: new Date() },
+      });
+  }
+
+  invalidateMpesaSettingsCache();
+
+  res.json({ message: `${toUpsert.length} setting(s) saved successfully` });
+});
+
+// ─── Security Events ──────────────────────────────────────────────────────────
+
+// GET /admin/security-events
+router.get("/admin/security-events", requireAuth, requireAdmin, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+
+  const events = await db
+    .select()
+    .from(securityEventsTable)
+    .orderBy(desc(securityEventsTable.createdAt))
+    .limit(limit);
+
+  res.json(events);
+});
+
+// DELETE /admin/security-events — clear all events
+router.delete("/admin/security-events", requireAuth, requireAdmin, async (req, res) => {
+  await db.delete(securityEventsTable);
+  res.json({ message: "Security events cleared" });
 });
 
 export default router;

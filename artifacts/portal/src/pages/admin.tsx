@@ -3,8 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, ShieldCheck, TrendingUp, Wallet, BarChart3 } from "lucide-react";
+import {
+  Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp,
+  ShieldCheck, BarChart3, Wallet, Settings, Shield, Eye, EyeOff,
+  AlertTriangle, RefreshCw, Trash2, Save, KeyRound, Radio,
+} from "lucide-react";
 import { format } from "date-fns";
 import { getAuthHeaders } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +49,25 @@ interface WithdrawalDetail {
   settlements: { id: number; accountType: string; accountNumber: string; accountName: string; isDefault: boolean }[];
 }
 
+interface SettingRow {
+  key: string;
+  value: string | null;
+  masked: boolean;
+  updatedAt: string | null;
+}
+
+interface SecurityEvent {
+  id: number;
+  eventType: string;
+  severity: string;
+  description: string;
+  ipAddress: string | null;
+  userId: number | null;
+  email: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 function modeBadge(mode: string, sub: string | null, exp: string | null) {
   if (mode === "active") {
     const expired = exp && new Date(exp) < new Date();
@@ -52,10 +77,308 @@ function modeBadge(mode: string, sub: string | null, exp: string | null) {
   return <Badge className="bg-amber-500 hover:bg-amber-600 text-white">Sandbox</Badge>;
 }
 
+function severityBadge(severity: string) {
+  const classes: Record<string, string> = {
+    critical: "bg-red-600 text-white",
+    high: "bg-orange-500 text-white",
+    medium: "bg-yellow-500 text-white",
+    low: "bg-gray-200 text-gray-700",
+  };
+  return <Badge className={`text-xs ${classes[severity] ?? "bg-gray-200"}`}>{severity.toUpperCase()}</Badge>;
+}
+
+function eventTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    failed_login: "Failed Login",
+    invalid_api_key: "Invalid API Key",
+    unauthorized_admin: "Unauthorized Admin",
+    suspicious_activity: "Suspicious Activity",
+  };
+  return labels[type] ?? type;
+}
+
+const SETTING_LABELS: Record<string, { label: string; placeholder: string; sensitive: boolean; group: string }> = {
+  mpesa_consumer_key: { label: "M-Pesa Consumer Key", placeholder: "Consumer key from Daraja portal", sensitive: false, group: "STK Push (C2B)" },
+  mpesa_consumer_secret: { label: "M-Pesa Consumer Secret", placeholder: "Consumer secret from Daraja portal", sensitive: true, group: "STK Push (C2B)" },
+  mpesa_passkey: { label: "M-Pesa Passkey", placeholder: "Paybill passkey from Daraja portal", sensitive: true, group: "STK Push (C2B)" },
+  mpesa_shortcode: { label: "M-Pesa Shortcode (Paybill)", placeholder: "e.g. 174379", sensitive: false, group: "STK Push (C2B)" },
+  b2c_consumer_key: { label: "B2C Consumer Key", placeholder: "Leave blank to use STK Push key", sensitive: false, group: "B2C (Send Money)" },
+  b2c_consumer_secret: { label: "B2C Consumer Secret", placeholder: "Leave blank to use STK Push secret", sensitive: true, group: "B2C (Send Money)" },
+  b2c_shortcode: { label: "B2C Shortcode", placeholder: "Leave blank to use STK Push shortcode", sensitive: false, group: "B2C (Send Money)" },
+  mpesa_initiator_name: { label: "Initiator Name", placeholder: "API operator username from Daraja", sensitive: false, group: "B2C (Send Money)" },
+  mpesa_security_credential: { label: "Security Credential (encrypted)", placeholder: "Pre-encrypted credential (recommended)", sensitive: true, group: "B2C (Send Money)" },
+  mpesa_initiator_password: { label: "Initiator Password (plaintext)", placeholder: "Will be encrypted automatically", sensitive: true, group: "B2C (Send Money)" },
+  callback_base_url: { label: "Callback Base URL", placeholder: "e.g. https://pay.makamesco-tech.co.ke", sensitive: false, group: "General" },
+};
+
+const SETTING_GROUPS = ["General", "STK Push (C2B)", "B2C (Send Money)"];
+
+function SettingsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({});
+
+  const { data: settings, isLoading } = useQuery<SettingRow[]>({
+    queryKey: ["admin-settings"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/settings`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed to load settings");
+      return r.json();
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (updates: Record<string, string>) => {
+      const r = await fetch(`${API_BASE}/api/admin/settings`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: (data) => {
+      toast({ title: "Settings saved", description: data.message });
+      setEdits({});
+      qc.invalidateQueries({ queryKey: ["admin-settings"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function getValue(key: string): string {
+    if (key in edits) return edits[key];
+    const row = settings?.find(s => s.key === key);
+    if (row?.masked) return "";
+    return row?.value ?? "";
+  }
+
+  function handleChange(key: string, val: string) {
+    setEdits(prev => ({ ...prev, [key]: val }));
+  }
+
+  function hasChanges() {
+    return Object.values(edits).some(v => v !== "");
+  }
+
+  function handleSave() {
+    const toSave: Record<string, string> = {};
+    for (const [k, v] of Object.entries(edits)) {
+      if (v.trim()) toSave[k] = v.trim();
+    }
+    if (Object.keys(toSave).length === 0) {
+      toast({ title: "No changes", description: "Enter values to save.", variant: "destructive" });
+      return;
+    }
+    saveMutation.mutate(toSave);
+  }
+
+  if (isLoading) return <div className="flex items-center gap-2 py-12 text-muted-foreground"><Loader2 className="animate-spin w-4 h-4" /> Loading settings…</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-lg">System Settings</h3>
+          <p className="text-sm text-muted-foreground">Configure M-Pesa credentials. Settings are stored in the database and take effect within 30 seconds.</p>
+        </div>
+        <Button onClick={handleSave} disabled={!hasChanges() || saveMutation.isPending} className="bg-green-600 hover:bg-green-700 gap-2">
+          {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Changes
+        </Button>
+      </div>
+
+      {SETTING_GROUPS.map(group => {
+        const keys = Object.entries(SETTING_LABELS).filter(([, meta]) => meta.group === group).map(([k]) => k);
+        return (
+          <Card key={group}>
+            <CardContent className="pt-4 space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                {group === "General" ? <Radio className="w-4 h-4 text-blue-600" /> :
+                  group === "STK Push (C2B)" ? <KeyRound className="w-4 h-4 text-green-600" /> :
+                    <Shield className="w-4 h-4 text-purple-600" />}
+                <span className="font-semibold text-sm">{group}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {keys.map(key => {
+                  const meta = SETTING_LABELS[key];
+                  const dbRow = settings?.find(s => s.key === key);
+                  const isSensitive = meta.sensitive;
+                  const isRevealed = showSensitive[key];
+                  const currentValue = getValue(key);
+                  const hasDbValue = !!dbRow?.value;
+                  const isEdited = key in edits && edits[key] !== "";
+
+                  return (
+                    <div key={key} className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium">{meta.label}</Label>
+                        <div className="flex items-center gap-1.5">
+                          {hasDbValue && !isEdited && (
+                            <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Set
+                            </span>
+                          )}
+                          {isSensitive && (
+                            <button
+                              type="button"
+                              onClick={() => setShowSensitive(p => ({ ...p, [key]: !isRevealed }))}
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <Input
+                        type={isSensitive && !isRevealed ? "password" : "text"}
+                        placeholder={dbRow?.masked ? "•••••••• (already set — enter to replace)" : meta.placeholder}
+                        value={currentValue}
+                        onChange={e => handleChange(key, e.target.value)}
+                        className={`text-sm font-mono ${isEdited ? "border-blue-400 ring-1 ring-blue-200" : ""}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 space-y-1">
+        <p className="font-semibold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" />Important Notes</p>
+        <p>• Settings override environment variables within 30 seconds (no restart needed).</p>
+        <p>• Leave B2C fields blank to fall back to STK Push credentials.</p>
+        <p>• For Security Credential: either provide the pre-encrypted value, or the plaintext initiator password (it will be auto-encrypted using Safaricom's public certificate).</p>
+        <p>• Callback Base URL only needed if automatic detection fails on your server.</p>
+      </div>
+    </div>
+  );
+}
+
+function SecurityTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data: events, isLoading, refetch, isFetching } = useQuery<SecurityEvent[]>({
+    queryKey: ["admin-security-events"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/security-events?limit=200`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed to load security events");
+      return r.json();
+    },
+    refetchInterval: 30_000,
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/security-events`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Cleared", description: "Security events have been cleared." });
+      qc.invalidateQueries({ queryKey: ["admin-security-events"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const counts = {
+    critical: events?.filter(e => e.severity === "critical").length ?? 0,
+    high: events?.filter(e => e.severity === "high").length ?? 0,
+    medium: events?.filter(e => e.severity === "medium").length ?? 0,
+    low: events?.filter(e => e.severity === "low").length ?? 0,
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-lg">Security Alerts</h3>
+          <p className="text-sm text-muted-foreground">Real-time log of failed logins, invalid API keys, and unauthorized access attempts. Refreshes every 30s.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1">
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+          {(events?.length ?? 0) > 0 && (
+            <Button variant="outline" size="sm" onClick={() => clearMutation.mutate()} disabled={clearMutation.isPending} className="gap-1 text-red-600 border-red-200 hover:bg-red-50">
+              <Trash2 className="w-3.5 h-3.5" /> Clear All
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: "Critical", key: "critical", color: "bg-red-50 border-red-200 text-red-700" },
+          { label: "High", key: "high", color: "bg-orange-50 border-orange-200 text-orange-700" },
+          { label: "Medium", key: "medium", color: "bg-yellow-50 border-yellow-200 text-yellow-700" },
+          { label: "Low", key: "low", color: "bg-gray-50 border-gray-200 text-gray-600" },
+        ].map(({ label, key, color }) => (
+          <Card key={key} className={`border ${color.includes("border") ? color.split(" ").find(c => c.startsWith("border")) : ""}`}>
+            <CardContent className={`pt-4 pb-3 ${color}`}>
+              <div className="text-2xl font-bold">{counts[key as keyof typeof counts]}</div>
+              <div className="text-xs font-medium mt-0.5">{label}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {isLoading && <div className="flex items-center gap-2 py-8 text-muted-foreground"><Loader2 className="animate-spin w-4 h-4" /> Loading events…</div>}
+
+      {!isLoading && (events?.length ?? 0) === 0 && (
+        <div className="flex flex-col items-center py-16 text-center text-muted-foreground gap-2">
+          <ShieldCheck className="w-10 h-10 text-green-500" />
+          <p className="font-medium">No security events</p>
+          <p className="text-sm">The system looks clean. Events will appear here if suspicious activity is detected.</p>
+        </div>
+      )}
+
+      {(events?.length ?? 0) > 0 && (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b text-xs text-muted-foreground text-left">
+                <th className="px-3 py-2.5 font-medium">Severity</th>
+                <th className="px-3 py-2.5 font-medium">Event Type</th>
+                <th className="px-3 py-2.5 font-medium">Description</th>
+                <th className="px-3 py-2.5 font-medium">IP Address</th>
+                <th className="px-3 py-2.5 font-medium">User / Email</th>
+                <th className="px-3 py-2.5 font-medium">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {events?.map(ev => (
+                <tr key={ev.id} className={`hover:bg-gray-50 ${ev.severity === "critical" ? "bg-red-50" : ev.severity === "high" ? "bg-orange-50/40" : ""}`}>
+                  <td className="px-3 py-2">{severityBadge(ev.severity)}</td>
+                  <td className="px-3 py-2">
+                    <span className="text-xs font-mono bg-gray-100 rounded px-1.5 py-0.5">{eventTypeLabel(ev.eventType)}</span>
+                  </td>
+                  <td className="px-3 py-2 text-xs max-w-xs">{ev.description}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{ev.ipAddress ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{ev.email ?? (ev.userId ? `#${ev.userId}` : "—")}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(ev.createdAt), "MMM d, HH:mm:ss")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"withdrawals" | "users">("withdrawals");
+  const [tab, setTab] = useState<"withdrawals" | "users" | "settings" | "security">("withdrawals");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
@@ -163,6 +486,13 @@ export default function AdminPanel() {
   const pending = withdrawals?.filter(w => w.status === "pending") ?? [];
   const processed = withdrawals?.filter(w => w.status !== "pending") ?? [];
 
+  const TABS = [
+    { key: "withdrawals", label: `Withdrawals (${pending.length} pending)` },
+    { key: "users", label: "Merchants" },
+    { key: "settings", label: "Settings" },
+    { key: "security", label: "Security" },
+  ] as const;
+
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center gap-3">
@@ -171,11 +501,10 @@ export default function AdminPanel() {
         </div>
         <div>
           <h2 className="text-2xl font-bold">Super Admin Panel</h2>
-          <p className="text-muted-foreground text-sm">Manage users, withdrawals, and account activations</p>
+          <p className="text-muted-foreground text-sm">Manage users, withdrawals, system settings, and security</p>
         </div>
       </div>
 
-      {/* Wallet Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card className="border-green-200 bg-green-50">
           <CardContent className="pt-5">
@@ -208,7 +537,6 @@ export default function AdminPanel() {
         </Card>
       </div>
 
-      {/* Merchant Stats */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card>
           <CardContent className="pt-5">
@@ -230,20 +558,22 @@ export default function AdminPanel() {
         </Card>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        {(["withdrawals", "users"] as const).map(t => (
+      <div className="flex gap-1 border-b overflow-x-auto">
+        {TABS.map(t => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+              tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
           >
-            {t === "withdrawals" ? `Withdrawals (${pending.length} pending)` : "Merchants"}
+            {t.key === "settings" && <Settings className="w-3.5 h-3.5" />}
+            {t.key === "security" && <Shield className="w-3.5 h-3.5" />}
+            {t.label}
           </button>
         ))}
       </div>
 
-      {/* Withdrawals Tab */}
       {tab === "withdrawals" && (
         <div className="space-y-4">
           <h3 className="font-semibold">Pending Withdrawals</h3>
@@ -265,14 +595,11 @@ export default function AdminPanel() {
                     <div className="text-sm">To: <strong>{w.phone}</strong></div>
                     <div className="text-xs text-muted-foreground">{format(new Date(w.createdAt), "MMM d, yyyy h:mm a")}</div>
                   </div>
-                  <Button onClick={() => { setDetailId(w.id); setNote(""); }} size="sm">
-                    View Details
-                  </Button>
+                  <Button onClick={() => { setDetailId(w.id); setNote(""); }} size="sm">View Details</Button>
                 </div>
               </CardContent>
             </Card>
           ))}
-
           {processed.length > 0 && (
             <>
               <h3 className="font-semibold mt-6">Processed</h3>
@@ -284,9 +611,7 @@ export default function AdminPanel() {
                         <div className="font-medium text-sm">{w.businessName} — KES {Number(w.amount).toLocaleString()}</div>
                         <div className="text-xs text-muted-foreground">{w.email} · {format(new Date(w.createdAt), "MMM d")}</div>
                       </div>
-                      <Badge variant={w.status === "completed" ? "default" : "destructive"}>
-                        {w.status}
-                      </Badge>
+                      <Badge variant={w.status === "completed" ? "default" : "destructive"}>{w.status}</Badge>
                     </div>
                   </CardContent>
                 </Card>
@@ -296,7 +621,6 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Users Tab */}
       {tab === "users" && (
         <div className="space-y-3">
           {uLoading && <Loader2 className="animate-spin" />}
@@ -319,34 +643,11 @@ export default function AdminPanel() {
                   <div className="flex items-center gap-2">
                     {u.mode === "sandbox" ? (
                       <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          onClick={() => activateMutation.mutate({ userId: u.id, plan: "monthly" })}
-                          disabled={activateMutation.isPending}
-                        >
-                          Activate Monthly
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="text-xs bg-green-600 hover:bg-green-700"
-                          onClick={() => activateMutation.mutate({ userId: u.id, plan: "yearly" })}
-                          disabled={activateMutation.isPending}
-                        >
-                          Activate Yearly
-                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs" onClick={() => activateMutation.mutate({ userId: u.id, plan: "monthly" })} disabled={activateMutation.isPending}>Activate Monthly</Button>
+                        <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={() => activateMutation.mutate({ userId: u.id, plan: "yearly" })} disabled={activateMutation.isPending}>Activate Yearly</Button>
                       </div>
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="text-xs"
-                        onClick={() => revokeMutation.mutate(u.id)}
-                        disabled={revokeMutation.isPending}
-                      >
-                        Revoke to Sandbox
-                      </Button>
+                      <Button size="sm" variant="destructive" className="text-xs" onClick={() => revokeMutation.mutate(u.id)} disabled={revokeMutation.isPending}>Revoke to Sandbox</Button>
                     )}
                     <button onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)} className="p-1 text-muted-foreground">
                       {expandedUser === u.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -366,7 +667,9 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Withdrawal Detail Dialog */}
+      {tab === "settings" && <SettingsTab />}
+      {tab === "security" && <SecurityTab />}
+
       <Dialog open={!!detailId} onOpenChange={open => { if (!open) { setDetailId(null); setNote(""); } }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -381,7 +684,6 @@ export default function AdminPanel() {
                 <div><strong>M-Pesa Phone:</strong> {detail.withdrawal.phone}</div>
                 <div><strong>Requested:</strong> {format(new Date(detail.withdrawal.createdAt), "MMM d, yyyy h:mm a")}</div>
               </div>
-
               {detail.settlements.length > 0 && (
                 <div>
                   <p className="text-sm font-semibold mb-2">Settlement Accounts</p>
@@ -396,33 +698,16 @@ export default function AdminPanel() {
                   ))}
                 </div>
               )}
-
               <div>
                 <label className="text-sm font-medium">Note (optional)</label>
-                <Textarea
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  placeholder="e.g. Payment sent via M-Pesa B2B"
-                  className="mt-1"
-                />
+                <Textarea value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Payment sent via M-Pesa B2B" className="mt-1" />
               </div>
-
               <DialogFooter className="gap-2">
-                <Button
-                  variant="destructive"
-                  onClick={() => completeMutation.mutate({ id: detailId!, action: "reject" })}
-                  disabled={completeMutation.isPending}
-                >
-                  {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
-                  Reject
+                <Button variant="destructive" onClick={() => completeMutation.mutate({ id: detailId!, action: "reject" })} disabled={completeMutation.isPending}>
+                  {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <XCircle className="w-4 h-4 mr-2" />} Reject
                 </Button>
-                <Button
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={() => completeMutation.mutate({ id: detailId!, action: "complete" })}
-                  disabled={completeMutation.isPending}
-                >
-                  {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Mark Complete
+                <Button className="bg-green-600 hover:bg-green-700" onClick={() => completeMutation.mutate({ id: detailId!, action: "complete" })} disabled={completeMutation.isPending}>
+                  {completeMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Mark Complete
                 </Button>
               </DialogFooter>
             </div>

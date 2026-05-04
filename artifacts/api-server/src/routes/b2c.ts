@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { b2cTransactionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
+import { requireAuthOrApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 import { getOrCreateWallet, deductWallet, refundWallet, B2C_FEE_RATE } from "./b2c-wallet";
@@ -10,7 +10,8 @@ import { getOrCreateWallet, deductWallet, refundWallet, B2C_FEE_RATE } from "./b
 const router = Router();
 
 // POST /api/payments/b2c — initiate a B2C payment (send money to phone)
-router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
+// Accepts both X-API-Key (external) and Authorization Bearer (portal)
+router.post("/payments/b2c", requireAuthOrApiKey, async (req: ApiKeyRequest, res) => {
   const userId = req.apiKeyUserId!;
   const { phoneNumber, amount, remarks, occasion, commandId } = req.body;
 
@@ -43,7 +44,6 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
   const feeAmount = parseFloat((sendAmount * B2C_FEE_RATE).toFixed(2));
   const totalDeducted = parseFloat((sendAmount + feeAmount).toFixed(2));
 
-  // Check wallet balance before proceeding
   const wallet = await getOrCreateWallet(userId);
   if (Number(wallet.balance) < totalDeducted) {
     res.status(402).json({
@@ -62,7 +62,6 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
 
   let deducted = false;
   try {
-    // Atomically deduct from wallet
     await deductWallet(userId, sendAmount);
     deducted = true;
 
@@ -102,7 +101,6 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
       totalDeducted,
     });
   } catch (err) {
-    // Refund wallet if deduction happened but B2C call failed
     if (deducted) {
       await refundWallet(userId, totalDeducted).catch(e => logger.error(e, "Wallet refund failed"));
     }
@@ -117,7 +115,7 @@ router.post("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
 });
 
 // GET /api/payments/b2c/status/:conversationId — check status
-router.get("/payments/b2c/status/:conversationId", requireApiKey, async (req: ApiKeyRequest, res) => {
+router.get("/payments/b2c/status/:conversationId", requireAuthOrApiKey, async (req: ApiKeyRequest, res) => {
   const { conversationId } = req.params;
 
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -153,8 +151,8 @@ router.get("/payments/b2c/status/:conversationId", requireApiKey, async (req: Ap
   });
 });
 
-// GET /api/payments/b2c — list all B2C transactions for the authenticated merchant
-router.get("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
+// GET /api/payments/b2c — list all B2C transactions for the authenticated user
+router.get("/payments/b2c", requireAuthOrApiKey, async (req: ApiKeyRequest, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.removeHeader("ETag");
 
@@ -173,13 +171,15 @@ router.get("/payments/b2c", requireApiKey, async (req: ApiKeyRequest, res) => {
     receiverPartyPublicName: tx.receiverPartyPublicName,
     commandId: tx.commandId,
     remarks: tx.remarks,
+    feeAmount: tx.feeAmount,
+    totalDeducted: tx.totalDeducted,
     resultDescription: tx.resultDescription,
     createdAt: tx.createdAt,
     updatedAt: tx.updatedAt,
   })));
 });
 
-// POST /api/payments/b2c/result — Safaricom B2C result callback (public — no API key)
+// POST /api/payments/b2c/result — Safaricom B2C result callback (public — no auth)
 router.post("/payments/b2c/result", async (req, res) => {
   try {
     const result = req.body?.Result;
@@ -191,7 +191,6 @@ router.post("/payments/b2c/result", async (req, res) => {
     const conversationId: string = result.ConversationID;
     const resultCode: number = result.ResultCode;
     const resultDesc: string = result.ResultDesc;
-    const originatorConversationId: string = result.OriginatorConversationID;
     const transactionId: string = result.TransactionID;
 
     const status = resultCode === 0 ? "completed" : "failed";

@@ -2,10 +2,51 @@ import { logger } from "./logger";
 import crypto from "crypto";
 
 const MPESA_BASE_URL = "https://api.safaricom.co.ke";
-const CONSUMER_KEY = process.env.MPESA_CONSUMER_KEY!;
-const CONSUMER_SECRET = process.env.MPESA_CONSUMER_SECRET!;
-const PASSKEY = process.env.MPESA_PASSKEY!;
-const SHORTCODE = process.env.MPESA_SHORTCODE!;
+
+// ─── DB-backed settings cache ─────────────────────────────────────────────────
+
+interface SettingsCache {
+  values: Record<string, string | null>;
+  fetchedAt: number;
+}
+
+let settingsCache: SettingsCache | null = null;
+const SETTINGS_CACHE_TTL = 30_000; // 30 seconds
+
+export function invalidateMpesaSettingsCache(): void {
+  settingsCache = null;
+  cachedToken = null;
+  cachedB2CToken = null;
+}
+
+async function getSystemSettings(): Promise<Record<string, string | null>> {
+  if (settingsCache && Date.now() - settingsCache.fetchedAt < SETTINGS_CACHE_TTL) {
+    return settingsCache.values;
+  }
+  try {
+    const { db } = await import("@workspace/db");
+    const { systemSettingsTable } = await import("@workspace/db");
+    const rows = await db.select().from(systemSettingsTable);
+    const values: Record<string, string | null> = {};
+    for (const row of rows) {
+      values[row.key] = row.value;
+    }
+    settingsCache = { values, fetchedAt: Date.now() };
+    return values;
+  } catch {
+    return {};
+  }
+}
+
+async function getSetting(key: string, envKey?: string): Promise<string> {
+  const settings = await getSystemSettings();
+  const dbVal = settings[key];
+  if (dbVal && dbVal.trim()) return dbVal.trim();
+  const resolvedEnvKey = envKey ?? key.toUpperCase().replace(/-/g, "_");
+  return process.env[resolvedEnvKey] ?? "";
+}
+
+// ─── STK Push (C2B) ──────────────────────────────────────────────────────────
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -14,7 +55,10 @@ export async function getAccessToken(): Promise<string> {
     return cachedToken.token;
   }
 
-  const credentials = Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString("base64");
+  const consumerKey = await getSetting("mpesa_consumer_key", "MPESA_CONSUMER_KEY");
+  const consumerSecret = await getSetting("mpesa_consumer_secret", "MPESA_CONSUMER_SECRET");
+
+  const credentials = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
   const response = await fetch(
     `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
     {
@@ -49,21 +93,19 @@ export function getTimestamp(): string {
   return `${y}${mo}${d}${h}${mi}${s}`;
 }
 
-export function getPassword(timestamp: string): string {
-  const raw = `${SHORTCODE}${PASSKEY}${timestamp}`;
+export async function getPassword(timestamp: string): Promise<string> {
+  const shortcode = await getSetting("mpesa_shortcode", "MPESA_SHORTCODE");
+  const passkey = await getSetting("mpesa_passkey", "MPESA_PASSKEY");
+  const raw = `${shortcode}${passkey}${timestamp}`;
   return Buffer.from(raw).toString("base64");
 }
 
 export function getCallbackBaseUrl(req?: { protocol: string; get(h: string): string | undefined }): string {
-  // 1. Explicit override via env var (set this on VPS)
   if (process.env.CALLBACK_BASE_URL) return process.env.CALLBACK_BASE_URL.replace(/\/$/, "");
-  // 2. Replit prod domain
   const replitDomain = process.env.REPLIT_DOMAINS?.split(",")[0];
   if (replitDomain) return `https://${replitDomain}`;
-  // 3. Replit dev domain
   const devDomain = process.env.REPLIT_DEV_DOMAIN;
   if (devDomain) return `https://${devDomain}`;
-  // 4. Derive from request
   if (req) return `${req.protocol}://${req.get("host")}`;
   return "https://pay.makamesco-tech.co.ke";
 }
@@ -74,12 +116,7 @@ export interface STKPushParams {
   accountReference: string;
   transactionDesc: string;
   callbackUrl: string;
-  /** Merchant's M-Pesa till number → CustomerBuyGoodsOnline, PartyB = till. */
   merchantTill?: string;
-  /**
-   * Merchant's Paybill business number → CustomerPayBillOnline, PartyB = paybill.
-   * BusinessShortCode stays as platform shortcode (gateway routing).
-   */
   merchantPaybill?: string;
 }
 
@@ -94,15 +131,11 @@ export interface STKPushResult {
 export async function initiateSTKPush(params: STKPushParams): Promise<STKPushResult> {
   const token = await getAccessToken();
   const timestamp = getTimestamp();
-  const password = getPassword(timestamp);
+  const password = await getPassword(timestamp);
+  const shortcode = await getSetting("mpesa_shortcode", "MPESA_SHORTCODE");
 
   const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
 
-  // Routing:
-  // Till    → CustomerBuyGoodsOnline, PartyB = till number (registered under platform head-office).
-  // Paybill → CustomerPayBillOnline,  PartyB = merchant paybill number (gateway routing).
-  //           BusinessShortCode stays as platform shortcode; password generated from platform creds.
-  // Default → CustomerPayBillOnline,  PartyB = platform shortcode (collected by platform).
   let partyB: string;
   let transactionType: string;
   if (params.merchantTill) {
@@ -112,12 +145,12 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
     partyB = params.merchantPaybill;
     transactionType = "CustomerPayBillOnline";
   } else {
-    partyB = SHORTCODE;
+    partyB = shortcode;
     transactionType = "CustomerPayBillOnline";
   }
 
   const body = {
-    BusinessShortCode: SHORTCODE,
+    BusinessShortCode: shortcode,
     Password: password,
     Timestamp: timestamp,
     TransactionType: transactionType,
@@ -152,18 +185,18 @@ export async function initiateSTKPush(params: STKPushParams): Promise<STKPushRes
 
 // ─── B2C ─────────────────────────────────────────────────────────────────────
 
-// Separate B2C credentials (different app/shortcode from STK Push)
-const B2C_CONSUMER_KEY = process.env.B2C_CONSUMER_KEY ?? CONSUMER_KEY;
-const B2C_CONSUMER_SECRET = process.env.B2C_CONSUMER_SECRET ?? CONSUMER_SECRET;
-const B2C_SHORTCODE = process.env.B2C_SHORTCODE ?? SHORTCODE;
-
 let cachedB2CToken: { token: string; expiresAt: number } | null = null;
 
 async function getB2CAccessToken(): Promise<string> {
   if (cachedB2CToken && Date.now() < cachedB2CToken.expiresAt) {
     return cachedB2CToken.token;
   }
-  const credentials = Buffer.from(`${B2C_CONSUMER_KEY}:${B2C_CONSUMER_SECRET}`).toString("base64");
+  const consumerKey = await getSetting("b2c_consumer_key", "B2C_CONSUMER_KEY") ||
+    await getSetting("mpesa_consumer_key", "MPESA_CONSUMER_KEY");
+  const consumerSecret = await getSetting("b2c_consumer_secret", "B2C_CONSUMER_SECRET") ||
+    await getSetting("mpesa_consumer_secret", "MPESA_CONSUMER_SECRET");
+
+  const credentials = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
   const response = await fetch(
     `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
     { headers: { Authorization: `Basic ${credentials}` } }
@@ -181,10 +214,6 @@ async function getB2CAccessToken(): Promise<string> {
   return cachedB2CToken.token;
 }
 
-
-
-// Safaricom Production Certificate (for encrypting the initiator password).
-// This is Safaricom's publicly published ProductionCertificate.cer in PEM form.
 const SAFARICOM_PRODUCTION_CERT = `-----BEGIN CERTIFICATE-----
 MIIGkzCCBHugAwIBAgIKXfBp5gAAAAAnBDANBgkqhkiG9w0BAQsFADBiMQswCQYD
 VQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEe
@@ -223,16 +252,13 @@ c7K5zQHX0O4GjBDQ+BZvDIaHa+MSHoJAhK3kXL+NqrP3sGxsLhFvDK1jY5Ncvf
 xO8jI+Kk3FHEdYBJE9VXHAB96aD0OtZxrXN1ECwGmMFEjm2P6o8A/PkCYNLb8Xc=
 -----END CERTIFICATE-----`;
 
-export function getSecurityCredential(): string {
-  // Option 1: pre-computed credential set directly as env var (recommended for production)
-  if (process.env.MPESA_SECURITY_CREDENTIAL) {
-    return process.env.MPESA_SECURITY_CREDENTIAL;
-  }
+export async function getSecurityCredential(): Promise<string> {
+  const direct = await getSetting("mpesa_security_credential", "MPESA_SECURITY_CREDENTIAL");
+  if (direct) return direct;
 
-  // Option 2: compute from initiator password + Safaricom production cert
-  const initiatorPassword = process.env.MPESA_INITIATOR_PASSWORD;
+  const initiatorPassword = await getSetting("mpesa_initiator_password", "MPESA_INITIATOR_PASSWORD");
   if (!initiatorPassword) {
-    throw new Error("MPESA_SECURITY_CREDENTIAL or MPESA_INITIATOR_PASSWORD must be set for B2C");
+    throw new Error("mpesa_security_credential or mpesa_initiator_password must be configured for B2C");
   }
 
   try {
@@ -244,7 +270,7 @@ export function getSecurityCredential(): string {
     return encrypted.toString("base64");
   } catch {
     throw new Error(
-      "Failed to encrypt B2C security credential. Set MPESA_SECURITY_CREDENTIAL directly in your .env file."
+      "Failed to encrypt B2C security credential. Set mpesa_security_credential directly in System Settings."
     );
   }
 }
@@ -269,11 +295,14 @@ export interface B2CResult {
 }
 
 export async function initiateB2C(params: B2CParams): Promise<B2CResult> {
-  const initiatorName = process.env.MPESA_INITIATOR_NAME;
-  if (!initiatorName) throw new Error("MPESA_INITIATOR_NAME must be set for B2C");
+  const initiatorName = await getSetting("mpesa_initiator_name", "MPESA_INITIATOR_NAME");
+  if (!initiatorName) throw new Error("mpesa_initiator_name must be configured for B2C");
+
+  const b2cShortcode = await getSetting("b2c_shortcode", "B2C_SHORTCODE") ||
+    await getSetting("mpesa_shortcode", "MPESA_SHORTCODE");
 
   const token = await getB2CAccessToken();
-  const securityCredential = getSecurityCredential();
+  const securityCredential = await getSecurityCredential();
 
   const phone = params.phoneNumber.replace(/^\+/, "").replace(/^0/, "254");
 
@@ -282,7 +311,7 @@ export async function initiateB2C(params: B2CParams): Promise<B2CResult> {
     SecurityCredential: securityCredential,
     CommandID: params.commandId ?? "BusinessPayment",
     Amount: Math.ceil(params.amount),
-    PartyA: B2C_SHORTCODE,
+    PartyA: b2cShortcode,
     PartyB: phone,
     Remarks: params.remarks,
     QueueTimeOutURL: params.timeoutUrl,

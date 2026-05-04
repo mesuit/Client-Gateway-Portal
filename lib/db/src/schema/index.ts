@@ -12,3 +12,5 @@ export * from "./b2c_topups";
 export * from "./pesapal_transactions";
 export * from "./saas_subscriptions";
 export * from "./saas_tenants";
+export * from "./system_settings";
+export * from "./security_events";
