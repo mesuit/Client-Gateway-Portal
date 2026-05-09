@@ -161,11 +161,8 @@ export default function Docs() {
 
       {/* ── STK PUSH ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold flex items-center gap-2 flex-wrap">
-          1. Trigger an STK Push
-          <span className="text-sm font-normal text-muted-foreground">(used for B2C wallet top-up &amp; customer collection)</span>
-        </h3>
-        <p className="text-muted-foreground text-sm">Sends a payment prompt directly to the customer's phone. They enter their M-Pesa PIN to complete the transaction. This same endpoint is used to <strong>collect funds into your B2C wallet</strong> — see Section 6.</p>
+        <h3 className="text-xl font-bold">1. Trigger an STK Push (C2B)</h3>
+        <p className="text-muted-foreground text-sm">Sends a payment prompt directly to the customer's phone. They enter their M-Pesa PIN to complete the transaction.</p>
 
         <EndpointCard method="POST" path="/api/payments/stkpush" description="Initiate an M-Pesa STK Push payment to a customer's phone.">
           <CodeBlock
@@ -620,10 +617,75 @@ if (status === 'completed') {
         </div>
       </section>
 
+      {/* ── PLATFORM WALLET WITHDRAWAL ───────────────────────────── */}
+      <section className="space-y-4">
+        <h3 className="text-xl font-bold">6. Platform Wallet &amp; Withdrawal</h3>
+        <p className="text-muted-foreground text-sm">
+          If you have <strong>no till number, paybill, or bank account</strong> configured, your collected STK Push and Card/Airtel payments accumulate in your platform wallet. You can withdraw that balance to any Safaricom number at any time — the platform sends the money instantly via M-Pesa B2C.
+        </p>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-3">
+          <p className="font-semibold">How it works</p>
+          <ol className="space-y-2 list-none">
+            {[
+              ["1", "Customers pay you via STK Push (C2B) or Card/Airtel", "Funds are collected and held in your platform wallet automatically."],
+              ["2", "Go to your dashboard → Withdrawal tab", "You can see your available balance at any time."],
+              ["3", "Enter your Safaricom phone number and the amount", "No settlement account needed — just your M-Pesa number."],
+              ["4", "Money sent instantly via M-Pesa B2C", "A 2.5% platform fee is deducted. The remaining 97.5% arrives on your phone."],
+            ].map(([n, title, desc]) => (
+              <li key={n} className="flex gap-3">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{n}</span>
+                <span><strong>{title}</strong> — {desc}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800 space-y-1">
+          <p className="font-semibold">💰 Withdrawal Fee Structure</p>
+          <p>A <strong>2.5% platform fee</strong> is deducted from every withdrawal. The remaining <strong>97.5%</strong> is sent directly to your phone.</p>
+          <div className="mt-2 border border-green-200 rounded-lg overflow-hidden text-xs">
+            <table className="w-full text-left">
+              <thead className="bg-green-100 border-b border-green-200">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Amount Requested</th>
+                  <th className="px-3 py-2 font-medium">Platform Fee (2.5%)</th>
+                  <th className="px-3 py-2 font-medium text-green-900">You Receive (97.5%)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-green-100 bg-white">
+                {[
+                  ["KES 500", "KES 12.50", "KES 487.50"],
+                  ["KES 1,000", "KES 25.00", "KES 975.00"],
+                  ["KES 5,000", "KES 125.00", "KES 4,875.00"],
+                  ["KES 10,000", "KES 250.00", "KES 9,750.00"],
+                ].map(([req, fee, recv]) => (
+                  <tr key={req}>
+                    <td className="px-3 py-2 font-mono">{req}</td>
+                    <td className="px-3 py-2 text-red-600 font-mono">{fee}</td>
+                    <td className="px-3 py-2 text-green-700 font-bold font-mono">{recv}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
+          <p className="font-semibold">⚡ Instant &amp; Automatic</p>
+          <p>Withdrawals are processed automatically — no manual approval needed. You'll receive an M-Pesa confirmation SMS the moment the transfer completes. Minimum withdrawal is <strong>KES 10</strong>.</p>
+        </div>
+
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm text-purple-800 space-y-1">
+          <p className="font-semibold">💡 Have a till or paybill?</p>
+          <p>If you configure a settlement account (till or paybill) under <strong>Settlement Accounts</strong> in your dashboard, STK Push payments go directly to that account — no platform fee, no withdrawal step needed. The platform wallet is only used when no settlement account is set.</p>
+        </div>
+      </section>
+
       {/* ── B2C ─────────────────────────────────────────────────── */}
       <section className="space-y-5">
         <h3 className="text-xl font-bold flex items-center gap-3">
-          6. B2C — Collect &amp; Disburse Funds
+          7. B2C — Collect &amp; Disburse Funds
           <Badge className="bg-green-100 text-green-700 border-green-200 text-xs px-2 py-0.5 font-medium">Live</Badge>
         </h3>
         <p className="text-muted-foreground text-sm">
@@ -652,14 +714,10 @@ if (status === 'completed') {
               )
             )}
           </div>
-          <div className="grid sm:grid-cols-2 gap-3 text-xs">
+          <div className="text-xs">
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-              <p className="font-semibold text-blue-800 mb-1">💰 B2C Send Fee (disbursement)</p>
+              <p className="font-semibold text-blue-800 mb-1">💰 B2C Send Fee</p>
               <p className="text-blue-700">8% platform fee per outgoing B2C payment. Sending <strong>KES 1,000</strong> deducts <strong>KES 1,080</strong> from your wallet (KES 1,000 sent + KES 80 fee).</p>
-            </div>
-            <div className="bg-green-50 border border-green-100 rounded-lg p-3">
-              <p className="font-semibold text-green-800 mb-1">🏧 STK Payout Fee (withdrawal)</p>
-              <p className="text-green-700">2.5% platform fee when withdrawing your collected STK Push balance. Withdrawing <strong>KES 1,000</strong> sends <strong>KES 975</strong> to your phone (KES 25 platform fee).</p>
             </div>
           </div>
         </div>
@@ -950,7 +1008,7 @@ collectAndDisburse().catch(console.error);`}
 
       {/* ── SAAS MULTI-TENANT ────────────────────────────────────── */}
       <section className="space-y-5">
-        <h3 className="text-xl font-bold">7. SaaS Multi-Tenant</h3>
+        <h3 className="text-xl font-bold">8. SaaS Multi-Tenant</h3>
         <p className="text-muted-foreground">
           The SaaS Multi-Tenant add-on lets you manage multiple clients (tenants) under a single merchant account.
           Each tenant has a unique <strong>tenant code</strong> that routes STK Push payments directly to that tenant's settlement account.
@@ -1054,7 +1112,7 @@ const tenant = await res.json();
 
       {/* ── ERROR CODES ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">8. Error Codes</h3>
+        <h3 className="text-xl font-bold">9. Error Codes</h3>
         <div className="border rounded-lg overflow-hidden text-sm">
           <table className="w-full text-left">
             <thead className="bg-gray-50 dark:bg-gray-900 border-b">
