@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Smartphone, Shield, Zap, Code2, ArrowRight, CheckCircle, Globe, Lock, BarChart3, Wifi } from "lucide-react";
+import { Smartphone, Shield, Zap, Code2, ArrowRight, CheckCircle, Globe, Lock, BarChart3, CreditCard, Banknote, Send } from "lucide-react";
 
 const FEATURES = [
   {
@@ -85,20 +85,34 @@ export default function Landing() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-6 bg-gradient-to-b from-green-50 via-white to-white">
         <div className="max-w-4xl mx-auto text-center space-y-6">
-          <div className="inline-flex items-center gap-2 text-sm text-green-700 font-medium">
-            <Wifi className="w-4 h-4 text-green-500" />
-            Live on Safaricom Daraja API
+          {/* Payment method pills */}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span className="inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Zap className="w-3.5 h-3.5" /> M-Pesa STK Push
+            </span>
+            <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <CreditCard className="w-3.5 h-3.5" /> Card Payments
+            </span>
+            <span className="inline-flex items-center gap-1.5 bg-red-50 text-red-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Smartphone className="w-3.5 h-3.5" /> Airtel Money
+            </span>
+            <span className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Send className="w-3.5 h-3.5" /> B2C Disbursements
+            </span>
+            <span className="inline-flex items-center gap-1.5 bg-orange-50 text-orange-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Banknote className="w-3.5 h-3.5" /> Payment Links
+            </span>
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-gray-900 leading-tight">
-            Accept M-Pesa payments{" "}
-            <span className="text-green-600">with a single API call</span>
+            One API for{" "}
+            <span className="text-green-600">every Kenya payment</span>
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto leading-relaxed">
             {isHeistTech
-              ? "HeistTech Enterprise Pay gives businesses a clean REST API to trigger STK Push payments, create payment links, and route money directly to their M-Pesa till — no agents, no delays."
-              : "Nexus Pay gives Kenyan businesses a clean REST API to trigger STK Push payments, create payment links, and route money directly to their M-Pesa till — no agents, no delays."}
+              ? "HeistTech Enterprise Pay gives businesses one clean API for M-Pesa STK Push, card payments, Airtel Money, B2C disbursements, and shareable payment links — funds land directly in your account, no agents, no delays."
+              : "Nexus Pay gives Kenyan businesses one clean API for M-Pesa STK Push, card payments, Airtel Money, B2C disbursements, and shareable payment links — funds land directly in your till, no agents, no delays."}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
