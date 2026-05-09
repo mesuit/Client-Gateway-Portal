@@ -161,8 +161,11 @@ export default function Docs() {
 
       {/* ── STK PUSH ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">1. Trigger an STK Push</h3>
-        <p className="text-muted-foreground text-sm">Sends a payment prompt directly to the customer's phone. They enter their M-Pesa PIN to complete the transaction.</p>
+        <h3 className="text-xl font-bold flex items-center gap-2 flex-wrap">
+          1. Trigger an STK Push
+          <span className="text-sm font-normal text-muted-foreground">(used for B2C wallet top-up &amp; customer collection)</span>
+        </h3>
+        <p className="text-muted-foreground text-sm">Sends a payment prompt directly to the customer's phone. They enter their M-Pesa PIN to complete the transaction. This same endpoint is used to <strong>collect funds into your B2C wallet</strong> — see Section 6.</p>
 
         <EndpointCard method="POST" path="/api/payments/stkpush" description="Initiate an M-Pesa STK Push payment to a customer's phone.">
           <CodeBlock
@@ -664,10 +667,30 @@ if (status === 'completed') {
         {/* ── PART A: COLLECT FUNDS ── */}
         <div className="space-y-3">
           <h4 className="font-bold text-base border-b pb-2">Part A — Collect Funds (Top Up Wallet)</h4>
-          <p className="text-sm text-muted-foreground">Trigger an STK Push to any phone to load funds into your B2C wallet. The wallet is credited automatically once the customer completes the payment.</p>
+          <p className="text-sm text-muted-foreground">There are two ways to load funds into your B2C wallet. Choose whichever suits your workflow:</p>
+
+          {/* Two top-up methods */}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-blue-800">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0">A</span>
+                Via API (programmatic)
+              </div>
+              <p className="text-blue-700 text-xs">Use your <code className="bg-blue-100 px-1 rounded">X-API-Key</code> to trigger an STK Push from your server. Best for automated top-ups from your application.</p>
+              <p className="text-blue-600 text-xs font-mono">POST /api/b2c/wallet/topup</p>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-green-800">
+                <span className="w-6 h-6 rounded-full bg-green-600 text-white text-xs flex items-center justify-center font-bold shrink-0">B</span>
+                Via Dashboard (manual)
+              </div>
+              <p className="text-green-700 text-xs">Log into your account, go to <strong>B2C Payments</strong> in the sidebar, and click <strong>Top Up Wallet</strong>. Enter an amount and your phone — an STK Push is sent to you instantly.</p>
+              <p className="text-green-600 text-xs">No code needed — ideal for manual top-ups.</p>
+            </div>
+          </div>
 
           <div className="border rounded-lg overflow-hidden text-sm">
-            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 1 — Send STK Push to fund your wallet</div>
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Method A — API: Send STK Push to fund your wallet</div>
             <CodeBlock
               curl={`curl -X POST ${BASE}/api/b2c/wallet/topup \\
   -H "Content-Type: application/json" \\
