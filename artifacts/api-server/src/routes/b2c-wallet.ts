@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { b2cWalletsTable, b2cTopupsTable } from "@workspace/db";
 import { eq, sql, desc } from "drizzle-orm";
 import { requireAuthOrApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
-import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
+import { initiateSTKPush, getCallbackBaseUrl, getB2CConfig } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -176,6 +176,16 @@ router.get("/b2c/wallet/topup/status/:checkoutRequestId", requireAuthOrApiKey, a
     return;
   }
   res.json({ status: topup.status, amount: topup.amount, mpesaReceiptNumber: topup.mpesaReceiptNumber });
+});
+
+// GET /api/b2c/config — return B2C configuration status (no secrets exposed)
+router.get("/b2c/config", requireAuthOrApiKey, async (_req: ApiKeyRequest, res) => {
+  try {
+    const config = await getB2CConfig();
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: "CONFIG_ERROR", message: err instanceof Error ? err.message : "Failed to read config" });
+  }
 });
 
 export default router;

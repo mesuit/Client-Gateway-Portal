@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowUpRight, Send, RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Phone, DollarSign, Wallet, Plus, Info, Terminal, Eye, EyeOff } from "lucide-react";
+import { ArrowUpRight, Send, RefreshCw, CheckCircle, XCircle, Clock, AlertCircle, Phone, DollarSign, Wallet, Plus, Info, Terminal, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,13 @@ interface B2CTx {
   createdAt: string;
 }
 
+interface B2CConfig {
+  b2cShortcode: string;
+  initiatorName: string;
+  hasDirectCredential: boolean;
+  hasInitiatorPassword: boolean;
+}
+
 function StatusBadge({ status }: { status: string }) {
   if (status === "completed") return <Badge className="bg-green-100 text-green-700 border-green-200 gap-1 text-xs"><CheckCircle className="w-3 h-3" />Completed</Badge>;
   if (status === "failed") return <Badge className="bg-red-100 text-red-700 border-red-200 gap-1 text-xs"><XCircle className="w-3 h-3" />Failed</Badge>;
@@ -62,6 +69,7 @@ export default function B2CPage() {
   const [loadingWallet, setLoadingWallet] = useState(true);
   const [transactions, setTransactions] = useState<B2CTx[]>([]);
   const [loadingTxs, setLoadingTxs] = useState(false);
+  const [config, setConfig] = useState<B2CConfig | null>(null);
 
   // Top-up state
   const [topupPhone, setTopupPhone] = useState("");
@@ -105,7 +113,14 @@ export default function B2CPage() {
     } finally { setLoadingTxs(false); }
   }, []);
 
-  useEffect(() => { fetchWallet(); fetchTransactions(); }, [fetchWallet, fetchTransactions]);
+  const fetchConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/b2c/config`, { headers: getAuthHeaders() });
+      if (res.ok) setConfig(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchWallet(); fetchTransactions(); fetchConfig(); }, [fetchWallet, fetchTransactions, fetchConfig]);
 
   // Poll top-up status
   useEffect(() => {
@@ -247,6 +262,18 @@ export default function B2CPage() {
   const balance = Number(wallet?.balance ?? 0);
   const canSend = balance >= total && total > 0;
 
+  // Detect if recent B2C attempts are all failing with credential errors
+  const recentInitiatorError =
+    transactions.length >= 2 &&
+    transactions.slice(0, 3).every(
+      tx =>
+        tx.status === "failed" &&
+        (tx.resultDescription?.toLowerCase().includes("initiator") ||
+          tx.resultDescription?.toLowerCase().includes("invalid"))
+    );
+
+  const credentialMissing = config && !config.hasDirectCredential && !config.hasInitiatorPassword;
+
   const curlPreview = `curl -X POST ${API_BASE}/api/payments/b2c \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: ${testApiKey || "sk_YOUR_SECRET_KEY"}" \\
@@ -305,6 +332,31 @@ export default function B2CPage() {
 
         {/* Send Tab */}
         <TabsContent value="send">
+          {/* Credential warning banners */}
+          {credentialMissing && (
+            <div className="mt-4 flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800">
+              <ShieldAlert className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">B2C Security Credential Not Configured</p>
+                <p className="mt-0.5">Go to <strong>Admin → Settings</strong> and set either <em>Security Credential (pre-encrypted)</em> or <em>Initiator Password</em> to enable B2C payments.</p>
+              </div>
+            </div>
+          )}
+          {recentInitiatorError && !credentialMissing && (
+            <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900">
+              <ShieldAlert className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">B2C Credential Mismatch (Safaricom error 2001)</p>
+                <p className="mt-1">Safaricom is rejecting your B2C initiator. Your payments will fail until this is resolved. Please verify <strong>all three</strong> of the following in your <a href="https://developer.safaricom.co.ke" target="_blank" className="underline font-medium">Daraja Production portal</a>:</p>
+                <ol className="list-decimal list-inside mt-1.5 space-y-0.5">
+                  <li>B2C shortcode (<strong>{config?.b2cShortcode || "not set"}</strong>) matches the B2C app shortcode in Daraja</li>
+                  <li>Initiator name (<strong>{config?.initiatorName || "not set"}</strong>) matches your API Operator username exactly</li>
+                  <li>Security Credential was generated in the <strong>Production</strong> environment (not Sandbox)</li>
+                </ol>
+                <p className="mt-1.5 text-xs">Update credentials in <strong>Admin → Settings</strong> → B2C section.</p>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
             <Card>
               <CardHeader>
@@ -348,8 +400,8 @@ export default function B2CPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Remarks</Label>
-                    <Input placeholder="e.g. Refund for order #123" value={remarks} onChange={e => setRemarks(e.target.value)} />
+                    <Label>Remarks <span className="text-red-500">*</span></Label>
+                    <Input placeholder="e.g. Refund for order #123" value={remarks} onChange={e => setRemarks(e.target.value)} required />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Occasion <span className="text-muted-foreground text-xs">(optional)</span></Label>
@@ -637,7 +689,7 @@ export default function B2CPage() {
                     <th className="pb-2 pr-3">Fee (8%)</th>
                     <th className="pb-2 pr-3">Total</th>
                     <th className="pb-2 pr-3">Type</th>
-                    <th className="pb-2 pr-3">Receipt</th>
+                    <th className="pb-2 pr-3">Receipt / Result</th>
                     <th className="pb-2 pr-3">Status</th>
                     <th className="pb-2">Date</th>
                   </tr>
@@ -650,9 +702,18 @@ export default function B2CPage() {
                       <td className="py-2 pr-3 text-blue-600 text-xs">{tx.feeAmount ? `KES ${fmt(tx.feeAmount)}` : "—"}</td>
                       <td className="py-2 pr-3 font-semibold text-xs">{tx.totalDeducted ? `KES ${fmt(tx.totalDeducted)}` : "—"}</td>
                       <td className="py-2 pr-3 text-xs text-muted-foreground">{tx.commandId.replace("Payment", "")}</td>
-                      <td className="py-2 pr-3 font-mono text-xs">{tx.mpesaReceiptNumber ?? "—"}</td>
+                      <td className="py-2 pr-3 font-mono text-xs max-w-[180px]">
+                        {tx.mpesaReceiptNumber
+                          ? <span className="text-green-700">{tx.mpesaReceiptNumber}</span>
+                          : tx.status === "failed" && tx.resultDescription
+                          ? <span className="text-red-600 font-sans">{tx.resultDescription}</span>
+                          : "—"}
+                      </td>
                       <td className="py-2 pr-3"><StatusBadge status={tx.status} /></td>
-                      <td className="py-2 text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                      <td className="py-2 text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(tx.createdAt).toLocaleDateString()}{" "}
+                        <span className="text-muted-foreground/60">{new Date(tx.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

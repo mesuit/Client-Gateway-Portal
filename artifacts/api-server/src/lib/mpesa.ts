@@ -349,3 +349,23 @@ export async function initiateB2C(params: B2CParams): Promise<B2CResult> {
 
   return (await response.json()) as B2CResult;
 }
+
+export async function getB2CConfig(): Promise<{
+  b2cShortcode: string;
+  initiatorName: string;
+  hasDirectCredential: boolean;
+  hasInitiatorPassword: boolean;
+}> {
+  const initiatorName = await getSetting("mpesa_initiator_name", "MPESA_INITIATOR_NAME");
+  const b2cShortcode =
+    (await getSetting("b2c_shortcode", "B2C_SHORTCODE")) ||
+    (await getSetting("mpesa_shortcode", "MPESA_SHORTCODE"));
+  const direct = await getSetting("mpesa_security_credential", "MPESA_SECURITY_CREDENTIAL");
+  const initiatorPwd = await getSetting("mpesa_initiator_password", "MPESA_INITIATOR_PASSWORD");
+  return {
+    b2cShortcode,
+    initiatorName,
+    hasDirectCredential: !!direct,
+    hasInitiatorPassword: !!initiatorPwd,
+  };
+}
