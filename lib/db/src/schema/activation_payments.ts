@@ -9,5 +9,6 @@ export const activationPaymentsTable = pgTable("activation_payments", {
   checkoutRequestId: text("checkout_request_id").unique(),
   merchantRequestId: text("merchant_request_id"),
   status: text("status").notNull().default("pending"), // pending | completed | failed
+  failureReason: text("failure_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

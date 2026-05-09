@@ -73,20 +73,40 @@ function ActivationModal({ open, onClose }: { open: boolean; onClose: () => void
 
       setCheckoutId(data.checkoutRequestId);
 
+      const deadline = Date.now() + 90_000; // 90-second timeout
       pollRef.current = setInterval(async () => {
-        const sr = await fetch(`${API_BASE}/api/activate/status/${data.checkoutRequestId}`, {
-          headers: getAuthHeaders(),
-        });
-        const sd = await sr.json();
-        if (sd.status === "completed") {
-          stopPoll();
-          setStep("done");
-          qc.invalidateQueries({ queryKey: ["me"] });
-          qc.invalidateQueries({ queryKey: ["getMe"] });
-        } else if (sd.status === "failed") {
-          stopPoll();
-          setStep("choose");
-          toast({ title: "Payment failed", description: "M-Pesa payment was not completed. Please try again.", variant: "destructive" });
+        try {
+          // Timed out — no callback received within 90 s
+          if (Date.now() > deadline) {
+            stopPoll();
+            setStep("choose");
+            toast({
+              title: "Request timed out",
+              description: "No response from M-Pesa after 90 seconds. Check your phone for the prompt — if it appeared, please wait a minute before trying again.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          const sr = await fetch(`${API_BASE}/api/activate/status/${data.checkoutRequestId}`, {
+            headers: { ...getAuthHeaders(), "Cache-Control": "no-cache" },
+            cache: "no-store",
+          });
+          if (!sr.ok) return; // transient error — keep polling
+          const sd = await sr.json();
+          if (sd.status === "completed") {
+            stopPoll();
+            setStep("done");
+            qc.invalidateQueries({ queryKey: ["me"] });
+            qc.invalidateQueries({ queryKey: ["getMe"] });
+          } else if (sd.status === "failed") {
+            stopPoll();
+            setStep("choose");
+            const reason = sd.failureReason ?? "M-Pesa payment was not completed. Please check your phone and try again.";
+            toast({ title: "Payment not completed", description: reason, variant: "destructive" });
+          }
+        } catch {
+          // Network error — keep polling silently
         }
       }, 3000);
     } catch (err: any) {

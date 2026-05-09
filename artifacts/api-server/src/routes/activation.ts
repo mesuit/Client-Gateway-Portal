@@ -17,6 +17,15 @@ const PLANS: Record<string, { amount: number; days: number; label: string }> = {
   "12months": { amount: 3800, days: 365, label: "12 Months" },
 };
 
+const RESULT_MESSAGES: Record<number, string> = {
+  1032: "You cancelled the M-Pesa request. Please try again and enter your PIN when prompted.",
+  1037: "The M-Pesa request timed out — the prompt was not responded to in time. Please try again.",
+  1: "Your M-Pesa account has insufficient funds. Please top up and try again.",
+  2001: "Wrong M-Pesa PIN entered. Please try again.",
+  17: "You have reached your M-Pesa transaction limit for today. Try again tomorrow.",
+  1001: "Unable to reach M-Pesa servers. Please try again in a moment.",
+};
+
 // POST /activate — initiate activation STK push
 router.post("/activate", requireAuth, async (req: AuthRequest, res) => {
   const { plan, phone } = req.body;
@@ -84,7 +93,13 @@ router.get("/activate/status/:checkoutRequestId", requireAuth, async (req: AuthR
     return;
   }
 
-  res.json({ status: rows[0].status, plan: rows[0].plan });
+  // Disable caching so the browser always gets the latest status
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    status: rows[0].status,
+    plan: rows[0].plan,
+    failureReason: rows[0].failureReason ?? null,
+  });
 });
 
 // POST /activate/callback — M-Pesa callback for activation payments
@@ -98,13 +113,22 @@ router.post("/activate/callback", async (req, res) => {
     }
 
     const checkoutRequestId = stk.CheckoutRequestID;
-    const resultCode = stk.ResultCode;
+    const resultCode = Number(stk.ResultCode);
+    const resultDesc: string = stk.ResultDesc ?? "";
 
     const status = resultCode === 0 ? "completed" : "failed";
+    const failureReason = resultCode !== 0
+      ? (RESULT_MESSAGES[resultCode] ?? `Payment failed: ${resultDesc}`)
+      : null;
+
+    logger.info(
+      { checkoutRequestId, resultCode, resultDesc, status },
+      "Activation callback received"
+    );
 
     const rows = await db
       .update(activationPaymentsTable)
-      .set({ status })
+      .set({ status, ...(failureReason ? { failureReason } : {}) })
       .where(eq(activationPaymentsTable.checkoutRequestId, checkoutRequestId))
       .returning();
 
@@ -125,7 +149,9 @@ router.post("/activate/callback", async (req, res) => {
         })
         .where(eq(usersTable.id, payment.userId));
 
-      logger.info({ userId: payment.userId, plan }, "Account activated");
+      logger.info({ userId: payment.userId, plan }, "Account activated successfully");
+    } else if (status === "failed") {
+      logger.warn({ checkoutRequestId, resultCode, resultDesc }, "Activation payment failed");
     }
 
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
