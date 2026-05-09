@@ -213,7 +213,7 @@ router.post("/payments/b2c/result", async (req, res) => {
       b2cChargesPaidAccount = get("B2CChargesPaidAccountAvailableFunds");
     }
 
-    await db
+    const [updatedTx] = await db
       .update(b2cTransactionsTable)
       .set({
         status,
@@ -225,7 +225,18 @@ router.post("/payments/b2c/result", async (req, res) => {
         b2cRecipientIsRegistered,
         b2cChargesPaidAccount,
       })
-      .where(eq(b2cTransactionsTable.conversationId, conversationId));
+      .where(eq(b2cTransactionsTable.conversationId, conversationId))
+      .returning();
+
+    // If B2C failed asynchronously, refund the wallet (money was deducted at initiation)
+    if (status === "failed" && updatedTx?.totalDeducted) {
+      try {
+        await refundWallet(updatedTx.userId, Number(updatedTx.totalDeducted));
+        logger.info({ userId: updatedTx.userId, totalDeducted: updatedTx.totalDeducted, conversationId }, "Wallet refunded after B2C failure");
+      } catch (refundErr) {
+        logger.error(refundErr, "Wallet refund after B2C failure failed");
+      }
+    }
 
     // Also resolve any auto-withdrawal request tied to this conversationId
     try {
@@ -266,10 +277,21 @@ router.post("/payments/b2c/timeout", async (req, res) => {
     const result = req.body?.Result;
     if (result?.ConversationID) {
       const cid: string = result.ConversationID;
-      await db
+      const [timedOutTx] = await db
         .update(b2cTransactionsTable)
         .set({ status: "failed", resultDescription: "Transaction timed out" })
-        .where(eq(b2cTransactionsTable.conversationId, cid));
+        .where(eq(b2cTransactionsTable.conversationId, cid))
+        .returning();
+
+      // Refund wallet on timeout — money was deducted at initiation
+      if (timedOutTx?.totalDeducted) {
+        try {
+          await refundWallet(timedOutTx.userId, Number(timedOutTx.totalDeducted));
+          logger.info({ userId: timedOutTx.userId, totalDeducted: timedOutTx.totalDeducted }, "Wallet refunded after B2C timeout");
+        } catch (refundErr) {
+          logger.error(refundErr, "Wallet refund after B2C timeout failed");
+        }
+      }
 
       // Also fail any auto-withdrawal tied to this conversationId
       try {
