@@ -106,6 +106,11 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
   const b2cReady = await isB2CConfigured();
 
   if (b2cReady) {
+    // 2.5% platform fee on every withdrawal
+    const PLATFORM_FEE_RATE = 0.025;
+    const platformFee = parseFloat((requestAmount * PLATFORM_FEE_RATE).toFixed(2));
+    const netAmount   = parseFloat((requestAmount - platformFee).toFixed(2));
+
     const baseUrl = getCallbackBaseUrl(req);
     const resultUrl  = `${baseUrl}/api/payments/b2c/result`;
     const timeoutUrl = `${baseUrl}/api/payments/b2c/timeout`;
@@ -113,7 +118,7 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
     try {
       const b2cResult = await initiateB2C({
         phoneNumber: formattedPhone,
-        amount: requestAmount,
+        amount: netAmount,
         commandId: "BusinessPayment",
         remarks: "Wallet withdrawal payout",
         resultUrl,
@@ -125,20 +130,22 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
         amount: String(requestAmount),
         phone: formattedPhone,
         status: "processing",
-        note: "Auto-processed via B2C",
+        note: `Auto-processed via B2C. Platform fee: KES ${platformFee.toFixed(2)} (2.5%). Net to merchant: KES ${netAmount.toFixed(2)}.`,
         b2cConversationId: b2cResult.ConversationID,
         autoProcessed: "true",
       }).returning();
 
       logger.info(
-        { userId: req.userId, amount: requestAmount, conversationId: b2cResult.ConversationID },
+        { userId: req.userId, amount: requestAmount, platformFee, netAmount, conversationId: b2cResult.ConversationID },
         "Auto-withdrawal B2C initiated"
       );
 
       res.status(201).json({
         ...request,
         autoProcessed: true,
-        message: "Your withdrawal is being processed automatically via M-Pesa B2C",
+        platformFee,
+        netAmount,
+        message: `Withdrawal processing via M-Pesa B2C. KES ${netAmount.toFixed(2)} will be sent (2.5% platform fee of KES ${platformFee.toFixed(2)} deducted).`,
       });
       return;
     } catch (err) {

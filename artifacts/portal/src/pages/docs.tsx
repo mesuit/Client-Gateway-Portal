@@ -618,91 +618,138 @@ if (status === 'completed') {
       </section>
 
       {/* ── B2C ─────────────────────────────────────────────────── */}
-      <section className="space-y-4">
+      <section className="space-y-5">
         <h3 className="text-xl font-bold flex items-center gap-3">
-          6. B2C — Send Money to a Phone
+          6. B2C — Collect &amp; Disburse Funds
           <Badge className="bg-green-100 text-green-700 border-green-200 text-xs px-2 py-0.5 font-medium">Live</Badge>
         </h3>
         <p className="text-muted-foreground text-sm">
-          B2C (Business to Customer) lets you push money from the platform shortcode directly to any M-Pesa number — for refunds, commissions, salaries, or cashback. B2C uses a <strong>prepaid wallet</strong>: top up your B2C wallet first (via STK Push), then each outgoing payment deducts the send amount plus an <strong>8% platform fee</strong>.
+          B2C (Business to Customer) has two distinct flows — <strong>collecting funds in</strong> (funding your wallet via STK Push) and <strong>disbursing funds out</strong> (sending money to any M-Pesa number for refunds, commissions, salaries, or cashback). Both flows use your API key.
         </p>
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-          <p className="font-semibold mb-1">💰 Fee Structure</p>
-          <p><strong>8% platform fee</strong> is charged per B2C transaction. Example: sending <strong>KES 1,000</strong> deducts <strong>KES 1,080</strong> from your wallet (KES 1,000 sent + KES 80 fee). Top up your wallet from the <strong>B2C Payments</strong> page in your dashboard.</p>
+
+        {/* Fund flow diagram */}
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-sm space-y-3">
+          <p className="font-semibold text-gray-800">How funds move</p>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 text-xs">
+            {[
+              { icon: "📲", label: "Customer phone", sub: "pays via STK Push" },
+              { arrow: true },
+              { icon: "🏦", label: "Your B2C Wallet", sub: "holds the balance" },
+              { arrow: true },
+              { icon: "💸", label: "Recipient phone", sub: "receives via B2C" },
+            ].map((item, i) =>
+              "arrow" in item ? (
+                <span key={i} className="text-gray-400 font-bold hidden sm:block">→</span>
+              ) : (
+                <div key={i} className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-center">
+                  <div className="text-lg">{item.icon}</div>
+                  <div className="font-semibold text-gray-800">{item.label}</div>
+                  <div className="text-gray-500">{item.sub}</div>
+                </div>
+              )
+            )}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3 text-xs">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <p className="font-semibold text-blue-800 mb-1">💰 B2C Send Fee (disbursement)</p>
+              <p className="text-blue-700">8% platform fee per outgoing B2C payment. Sending <strong>KES 1,000</strong> deducts <strong>KES 1,080</strong> from your wallet (KES 1,000 sent + KES 80 fee).</p>
+            </div>
+            <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+              <p className="font-semibold text-green-800 mb-1">🏧 STK Payout Fee (withdrawal)</p>
+              <p className="text-green-700">2.5% platform fee when withdrawing your collected STK Push balance. Withdrawing <strong>KES 1,000</strong> sends <strong>KES 975</strong> to your phone (KES 25 platform fee).</p>
+            </div>
+          </div>
         </div>
-        <div className="border rounded-lg overflow-hidden text-sm">
-          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 1 — Top up your B2C wallet (collect funds in)</div>
-          <CodeBlock
-            curl={`# First, send an STK Push to fund your B2C wallet
-curl -X POST ${BASE}/api/b2c/wallet/topup \\
+
+        {/* ── PART A: COLLECT FUNDS ── */}
+        <div className="space-y-3">
+          <h4 className="font-bold text-base border-b pb-2">Part A — Collect Funds (Top Up Wallet)</h4>
+          <p className="text-sm text-muted-foreground">Trigger an STK Push to any phone to load funds into your B2C wallet. The wallet is credited automatically once the customer completes the payment.</p>
+
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 1 — Send STK Push to fund your wallet</div>
+            <CodeBlock
+              curl={`curl -X POST ${BASE}/api/b2c/wallet/topup \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: YOUR_SECRET_KEY" \\
   -d '{
     "phoneNumber": "254712345678",
     "amount": 5000
   }'`}
-            node={`// Send an STK Push to fund your B2C wallet
-const res = await fetch('${BASE}/api/b2c/wallet/topup', {
+              node={`const res = await fetch('${BASE}/api/b2c/wallet/topup', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
     'X-API-Key': 'YOUR_SECRET_KEY'
   },
   body: JSON.stringify({
-    phoneNumber: '254712345678',   // phone that will pay (yours or client's)
+    phoneNumber: '254712345678',   // phone that will pay
     amount: 5000                   // amount in KES to load into wallet
   })
 });
-const { checkoutRequestId, customerMessage } = await res.json();
-// checkoutRequestId — use to poll top-up status
-// An STK Push is sent to the phone immediately`}
-          />
-        </div>
+const { checkoutRequestId } = await res.json();
+// Save checkoutRequestId — use it to confirm the top-up`}
+            />
+          </div>
 
-        <div className="border rounded-lg overflow-hidden text-sm">
-          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 2 — Poll top-up status</div>
-          <CodeBlock
-            curl={`curl ${BASE}/api/b2c/wallet/topup/status/ws_CO_24042026_123456 \\
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 2 — Confirm top-up status (poll every 3–5 s)</div>
+            <CodeBlock
+              curl={`curl ${BASE}/api/b2c/wallet/topup/status/ws_CO_24042026_123456 \\
   -H "X-API-Key: YOUR_SECRET_KEY"`}
-            node={`// Poll until the top-up is confirmed (customer paid STK Push)
-const res = await fetch(
-  \`${BASE}/api/b2c/wallet/topup/status/\${checkoutRequestId}\`,
-  { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
-);
-const { status, amount } = await res.json();
-// status: 'pending' | 'completed' | 'failed'
-if (status === 'completed') {
-  console.log(\`KES \${amount} loaded into B2C wallet\`);
+              node={`// Poll until confirmed
+async function waitForTopup(checkoutRequestId, apiKey) {
+  for (let i = 0; i < 20; i++) {
+    const res = await fetch(
+      \`${BASE}/api/b2c/wallet/topup/status/\${checkoutRequestId}\`,
+      { headers: { 'X-API-Key': apiKey } }
+    );
+    const { status, amount } = await res.json();
+    if (status === 'completed') {
+      console.log(\`KES \${amount} added to B2C wallet ✅\`);
+      return;
+    }
+    if (status === 'failed') throw new Error('Top-up failed or cancelled');
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  throw new Error('Timed out waiting for top-up');
 }`}
-          />
-        </div>
+            />
+          </div>
 
-        <div className="border rounded-lg overflow-hidden text-sm">
-          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 3 — Check wallet balance</div>
-          <CodeBlock
-            curl={`curl ${BASE}/api/b2c/wallet \\
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 3 — Check your wallet balance</div>
+            <CodeBlock
+              curl={`curl ${BASE}/api/b2c/wallet \\
   -H "X-API-Key: YOUR_SECRET_KEY"`}
-            node={`const res = await fetch('${BASE}/api/b2c/wallet', {
+              node={`const res = await fetch('${BASE}/api/b2c/wallet', {
   headers: { 'X-API-Key': 'YOUR_SECRET_KEY' }
 });
-const { balance, totalFees, feeRate } = await res.json();
-// balance — available to spend (KES)
-// feeRate  — 0.08 (8%)`}
-          />
+const { balance, totalTopups, totalSent, totalFees, feeRate } = await res.json();
+// balance    — KES available to spend right now
+// feeRate    — 0.08 (8% deducted per outgoing B2C send)
+console.log(\`Wallet balance: KES \${balance}\`);`}
+            />
+          </div>
         </div>
 
-        <EndpointCard method="POST" path="/api/payments/b2c" description="Send money from your shortcode to a customer's M-Pesa number.">
-          <CodeBlock
-            curl={`curl -X POST ${BASE}/api/payments/b2c \\
+        {/* ── PART B: DISBURSE FUNDS ── */}
+        <div className="space-y-3">
+          <h4 className="font-bold text-base border-b pb-2">Part B — Disburse Funds (Send to Phone)</h4>
+          <p className="text-sm text-muted-foreground">Once your wallet has funds, send money to any Safaricom number instantly. Common uses: refunds, commissions, salaries, cashback.</p>
+
+          <EndpointCard method="POST" path="/api/payments/b2c" description="Send money from your B2C wallet to a recipient's M-Pesa number.">
+            <CodeBlock
+              curl={`curl -X POST ${BASE}/api/payments/b2c \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: YOUR_SECRET_KEY" \\
   -d '{
     "phoneNumber": "254712345678",
     "amount": 500,
-    "remarks": "Refund for order #123",
+    "remarks": "Commission for May",
     "commandId": "BusinessPayment"
   }'`}
-            node={`const res = await fetch('${BASE}/api/payments/b2c', {
+              node={`const res = await fetch('${BASE}/api/payments/b2c', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -710,41 +757,44 @@ const { balance, totalFees, feeRate } = await res.json();
   },
   body: JSON.stringify({
     phoneNumber: '254712345678',
-    amount: 500,
-    remarks: 'Refund for order #123',
-    commandId: 'BusinessPayment'   // or SalaryPayment, PromotionPayment
+    amount: 500,                         // KES to send (wallet deducts 500 + 8% fee = 540)
+    remarks: 'Commission for May',
+    commandId: 'BusinessPayment'         // or SalaryPayment, PromotionPayment
   })
 });
+const { conversationId, feeAmount, totalDeducted } = await res.json();
+// conversationId  — use to check delivery status
+// feeAmount       — KES deducted as platform fee (8%)
+// totalDeducted   — total deducted from wallet (amount + fee)`}
+            />
+          </EndpointCard>
 
-const data = await res.json();
-// data.conversationId — use to check status`}
-          />
-        </EndpointCard>
+          <ParamTable rows={[
+            ["phoneNumber", "string", "Recipient Safaricom number — format 254XXXXXXXXX"],
+            ["amount", "number", "Amount to send in KES (minimum 10). Wallet deducts amount + 8% fee"],
+            ["remarks", "string", "Description (shown in Safaricom transaction reports)"],
+            ["commandId", "string", "BusinessPayment | SalaryPayment | PromotionPayment (default: BusinessPayment)", false],
+            ["occasion", "string", "Optional reference label attached to the transaction", false],
+          ]} />
 
-        <ParamTable rows={[
-          ["phoneNumber", "string", "Recipient Safaricom number — format 254XXXXXXXXX"],
-          ["amount", "number", "Amount to send in KES (minimum 10)"],
-          ["remarks", "string", "Description of the payment (shown in Safaricom reports)"],
-          ["commandId", "string", "BusinessPayment | SalaryPayment | PromotionPayment (default: BusinessPayment)", false],
-          ["occasion", "string", "Optional occasion or reference label", false],
-        ]} />
-
-        <div className="border rounded-lg overflow-hidden text-sm">
-          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">B2C Initiation Response</div>
-          <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
-  "conversationId": "AG_20260425_...",           // use this to check status
-  "originatorConversationId": "29115-...",
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Initiation Response</div>
+            <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+  "conversationId": "AG_20260425_...",    // track delivery with this
   "responseCode": "0",
   "responseDescription": "Accept the service request successfully.",
+  "feeAmount": 40,                        // KES platform fee (8%)
+  "totalDeducted": 540,                   // amount + fee deducted from wallet
   "transactionId": 5
 }`}</pre>
-        </div>
+          </div>
 
-        <EndpointCard method="GET" path="/api/payments/b2c/status/:conversationId" description="Check the status of a B2C payment using the conversationId from the initiation response.">
-          <CodeBlock
-            curl={`curl ${BASE}/api/payments/b2c/status/AG_20260425_123456 \\
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Step 4 — Poll delivery status</div>
+            <CodeBlock
+              curl={`curl ${BASE}/api/payments/b2c/status/AG_20260425_123456 \\
   -H "X-API-Key: YOUR_SECRET_KEY"`}
-            node={`const res = await fetch(
+              node={`const res = await fetch(
   \`${BASE}/api/payments/b2c/status/\${conversationId}\`,
   { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
 );
@@ -754,30 +804,120 @@ if (data.status === 'completed') {
   console.log('Receipt:', data.mpesaReceiptNumber);
   console.log('Recipient:', data.receiverPartyPublicName);
 }`}
-          />
-        </EndpointCard>
+            />
+          </div>
 
-        <div className="border rounded-lg overflow-hidden text-sm">
-          <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">B2C Status Response</div>
-          <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b font-medium">Delivery Status Response</div>
+            <pre className="p-4 bg-gray-950 text-gray-50 text-xs overflow-x-auto">{`{
   "conversationId": "AG_20260425_...",
-  "status": "completed",                         // pending | completed | failed
+  "status": "completed",                          // pending | completed | failed
   "amount": "500.00",
   "phoneNumber": "254712345678",
   "mpesaReceiptNumber": "RCD6ABXXXXX",
   "receiverPartyPublicName": "254712345678 - John Doe",
   "commandId": "BusinessPayment",
-  "remarks": "Refund for order #123",
+  "remarks": "Commission for May",
   "createdAt": "2026-04-25T14:00:00Z",
   "updatedAt": "2026-04-25T14:01:10Z"
 }`}</pre>
+          </div>
+
+          <EndpointCard method="GET" path="/api/payments/b2c" description="List all B2C disbursement transactions for your account." />
         </div>
 
-        <EndpointCard method="GET" path="/api/payments/b2c" description="List all B2C transactions for your account." />
+        {/* ── COMPLETE END-TO-END EXAMPLE ── */}
+        <div className="space-y-3">
+          <h4 className="font-bold text-base border-b pb-2">Complete End-to-End Example</h4>
+          <CodeBlock
+            curl={`# 1. Top up your wallet (KES 2,000)
+TOPUP=$(curl -s -X POST ${BASE}/api/b2c/wallet/topup \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{"phoneNumber":"254712345678","amount":2000}')
+CID=$(echo $TOPUP | jq -r '.checkoutRequestId')
+
+# 2. Wait for payment confirmation
+for i in $(seq 1 15); do
+  STATUS=$(curl -s "${BASE}/api/b2c/wallet/topup/status/$CID" \\
+    -H "X-API-Key: YOUR_SECRET_KEY" | jq -r '.status')
+  [ "$STATUS" = "completed" ] && echo "Wallet funded ✅" && break
+  [ "$STATUS" = "failed" ] && echo "Top-up failed ❌" && exit 1
+  sleep 3
+done
+
+# 3. Send KES 500 to a recipient (wallet deducts KES 540 incl. 8% fee)
+curl -X POST ${BASE}/api/payments/b2c \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: YOUR_SECRET_KEY" \\
+  -d '{"phoneNumber":"254798765432","amount":500,"remarks":"Cashback"}'`}
+            node={`const API_KEY = 'YOUR_SECRET_KEY';
+const BASE = '${BASE}';
+
+async function collectAndDisburse() {
+  // ── Step 1: Fund your B2C wallet ──────────────────────────────
+  const topupRes = await fetch(\`\${BASE}/api/b2c/wallet/topup\`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+    body: JSON.stringify({ phoneNumber: '254712345678', amount: 2000 })
+  });
+  const { checkoutRequestId } = await topupRes.json();
+  console.log('STK Push sent — waiting for payment...');
+
+  // ── Step 2: Wait for customer to pay ─────────────────────────
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const s = await fetch(
+      \`\${BASE}/api/b2c/wallet/topup/status/\${checkoutRequestId}\`,
+      { headers: { 'X-API-Key': API_KEY } }
+    ).then(r => r.json());
+    if (s.status === 'completed') { console.log('Wallet funded ✅'); break; }
+    if (s.status === 'failed') throw new Error('Top-up failed');
+  }
+
+  // ── Step 3: Check balance ─────────────────────────────────────
+  const wallet = await fetch(\`\${BASE}/api/b2c/wallet\`, {
+    headers: { 'X-API-Key': API_KEY }
+  }).then(r => r.json());
+  console.log(\`Balance: KES \${wallet.balance}\`);
+
+  // ── Step 4: Send money to recipient ───────────────────────────
+  // Sending KES 500 → wallet deducts KES 540 (500 + 8% = 40 fee)
+  const sendRes = await fetch(\`\${BASE}/api/payments/b2c\`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+    body: JSON.stringify({
+      phoneNumber: '254798765432',
+      amount: 500,
+      remarks: 'Cashback reward',
+      commandId: 'BusinessPayment'
+    })
+  });
+  const { conversationId, feeAmount, totalDeducted } = await sendRes.json();
+  console.log(\`Sent! Fee: KES \${feeAmount}, Total deducted: KES \${totalDeducted}\`);
+
+  // ── Step 5: Confirm delivery ──────────────────────────────────
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const status = await fetch(
+      \`\${BASE}/api/payments/b2c/status/\${conversationId}\`,
+      { headers: { 'X-API-Key': API_KEY } }
+    ).then(r => r.json());
+    if (status.status === 'completed') {
+      console.log('Delivered ✅ Receipt:', status.mpesaReceiptNumber);
+      return status;
+    }
+    if (status.status === 'failed') throw new Error('B2C delivery failed');
+  }
+}
+
+collectAndDisburse().catch(console.error);`}
+          />
+        </div>
 
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-2">
           <p className="font-semibold">B2C Result URLs (auto-registered)</p>
-          <p>Safaricom posts results to these URLs automatically — no configuration required on your end:</p>
+          <p>Safaricom posts delivery results to these URLs automatically — no configuration needed on your end:</p>
           <div className="space-y-1 text-xs font-mono">
             <div className="flex items-center gap-2"><span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">POST</span>{BASE}/api/payments/b2c/result</div>
             <div className="flex items-center gap-2"><span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">POST</span>{BASE}/api/payments/b2c/timeout</div>
@@ -787,7 +927,7 @@ if (data.status === 'completed') {
 
       {/* ── SAAS MULTI-TENANT ────────────────────────────────────── */}
       <section className="space-y-5">
-        <h3 className="text-xl font-bold">6. SaaS Multi-Tenant</h3>
+        <h3 className="text-xl font-bold">7. SaaS Multi-Tenant</h3>
         <p className="text-muted-foreground">
           The SaaS Multi-Tenant add-on lets you manage multiple clients (tenants) under a single merchant account.
           Each tenant has a unique <strong>tenant code</strong> that routes STK Push payments directly to that tenant's settlement account.
@@ -891,7 +1031,7 @@ const tenant = await res.json();
 
       {/* ── ERROR CODES ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">7. Error Codes</h3>
+        <h3 className="text-xl font-bold">8. Error Codes</h3>
         <div className="border rounded-lg overflow-hidden text-sm">
           <table className="w-full text-left">
             <thead className="bg-gray-50 dark:bg-gray-900 border-b">
