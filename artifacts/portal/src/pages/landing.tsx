@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Smartphone, Shield, Zap, Code2, ArrowRight, CheckCircle, Globe, Lock, BarChart3 } from "lucide-react";
+import { Smartphone, Shield, Zap, Code2, ArrowRight, CheckCircle, Globe, Lock, BarChart3, Wifi } from "lucide-react";
 
 const FEATURES = [
   {
@@ -58,11 +58,12 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <img src="/favicon.png" alt={isHeistTech ? "HeistTech Pay" : "Nexus Pay"} className="w-9 h-9 rounded-xl object-contain" />
-            <div>
-              <span className="font-bold text-gray-900">{isHeistTech ? "HeistTech Pay" : "Nexus Pay"}</span>
-              {!isHeistTech && <span className="hidden sm:inline text-xs text-gray-400 ml-1">by Makamesco</span>}
+            <div className="w-9 h-9 rounded-xl bg-green-600 flex items-center justify-center shrink-0">
+              <Zap className="w-5 h-5 text-white" />
             </div>
+            <span className="font-bold text-gray-900 text-lg leading-none">
+              {isHeistTech ? "HeistTech Pay" : "Nexus Pay"}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <Link
@@ -84,9 +85,9 @@ export default function Landing() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-6 bg-gradient-to-b from-green-50 via-white to-white">
         <div className="max-w-4xl mx-auto text-center space-y-6">
-          <div className="inline-flex items-center gap-2 bg-green-100 text-green-700 text-xs font-semibold px-3 py-1.5 rounded-full">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-            Live M-Pesa Gateway · Daraja API
+          <div className="inline-flex items-center gap-2 text-sm text-green-700 font-medium">
+            <Wifi className="w-4 h-4 text-green-500" />
+            Live on Safaricom Daraja API
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-gray-900 leading-tight">
