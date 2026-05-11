@@ -9,6 +9,7 @@ export const apiKeysTable = pgTable("api_keys", {
   keyName: text("key_name").notNull(),
   publicKey: text("public_key").notNull().unique(),
   secretKey: text("secret_key").notNull().unique(),
+  webhookUrl: text("webhook_url"), // Added this to store the dev's URL
   isActive: boolean("is_active").notNull().default(true),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
