@@ -5,6 +5,7 @@ import { eq, and, count } from "drizzle-orm";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
+import { dispatchWebhook } from "../lib/webhook"; // Import the webhook messenger logic
 
 const router = Router();
 
@@ -101,8 +102,6 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
     : undefined;
 
   // Paybill → CustomerPayBillOnline, PartyB = merchant paybill business number.
-  //           If businessNumber missing, fall back to accountNumber as the paybill shortcode.
-  //           AccountReference = merchant's account number on their paybill.
   const paybillShortcode = resolvedSettlement?.accountType === "paybill"
     ? (resolvedSettlement.businessNumber || resolvedSettlement.accountNumber)
     : undefined;
@@ -185,10 +184,35 @@ router.post("/payments/callback", async (req, res) => {
 
     const status = resultCode === 0 ? "completed" : resultCode === 1032 ? "cancelled" : "failed";
 
-    await db
+    // Update DB and get the updated transaction record
+    const [updatedTx] = await db
       .update(transactionsTable)
       .set({ status, statusCode: String(resultCode), statusDescription: resultDesc, mpesaReceiptNumber, callbackMetadata })
-      .where(eq(transactionsTable.checkoutRequestId, checkoutRequestId));
+      .where(eq(transactionsTable.checkoutRequestId, checkoutRequestId))
+      .returning();
+
+    // TRIGGER WEBHOOK LOGIC
+    if (updatedTx && status === "completed") {
+      // Find the user's API key to get the saved webhook URL
+      const [apiKey] = await db
+        .select()
+        .from(apiKeysTable)
+        .where(eq(apiKeysTable.userId, updatedTx.userId))
+        .limit(1);
+
+      if (apiKey?.webhookUrl) {
+        // Send notification to the developer's server
+        dispatchWebhook(apiKey.webhookUrl, {
+          transactionId: updatedTx.id,
+          receipt: updatedTx.mpesaReceiptNumber,
+          amount: updatedTx.amount,
+          phone: updatedTx.phoneNumber,
+          reference: updatedTx.accountReference,
+          status: "SUCCESS",
+          timestamp: updatedTx.updatedAt
+        });
+      }
+    }
 
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (err) {
