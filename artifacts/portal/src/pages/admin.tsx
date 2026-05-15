@@ -10,7 +10,7 @@ import {
   Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp,
   ShieldCheck, BarChart3, Wallet, Settings, Shield, Eye, EyeOff,
   AlertTriangle, RefreshCw, Trash2, Save, KeyRound, Radio,
-  Search, Activity, Zap,
+  Search, Activity, Zap, TrendingUp, ArrowUpCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -311,7 +311,7 @@ function TransactionsTab() {
       )}
 
       {filtered.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-xl border mb-8">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b text-xs text-muted-foreground text-left">
@@ -364,6 +364,76 @@ function TransactionsTab() {
                       )}
                     </div>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Withdrawal History section */}
+      <WithdrawalHistorySection />
+    </div>
+  );
+}
+
+function WithdrawalHistorySection() {
+  const { data: allWithdrawals, isLoading } = useQuery<Withdrawal[]>({
+    queryKey: ["admin-withdrawals"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/withdrawals`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+  });
+
+  const items = allWithdrawals ?? [];
+  const recentProcessed = items.filter(w => w.status !== "pending").slice(0, 20);
+
+  return (
+    <div className="mt-8 space-y-3">
+      <div className="flex items-center gap-2">
+        <ArrowUpCircle className="w-4 h-4 text-purple-600" />
+        <h3 className="font-semibold text-sm">Withdrawal History</h3>
+        <span className="text-xs text-muted-foreground">({items.length} total, {items.filter(w => w.status === "pending").length} pending)</span>
+      </div>
+      {isLoading && <Loader2 className="animate-spin w-4 h-4 text-muted-foreground" />}
+      {!isLoading && recentProcessed.length === 0 && (
+        <p className="text-xs text-muted-foreground py-4 text-center border rounded-xl bg-gray-50">No processed withdrawals yet.</p>
+      )}
+      {recentProcessed.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b text-muted-foreground text-left">
+                <th className="px-3 py-2 font-medium">Merchant</th>
+                <th className="px-3 py-2 font-medium">Amount</th>
+                <th className="px-3 py-2 font-medium">Phone</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Note</th>
+                <th className="px-3 py-2 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {recentProcessed.map(w => (
+                <tr key={w.id} className="hover:bg-gray-50/80">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{w.businessName}</div>
+                    <div className="text-muted-foreground">{w.email}</div>
+                  </td>
+                  <td className="px-3 py-2 font-semibold">KES {Number(w.amount).toLocaleString()}</td>
+                  <td className="px-3 py-2 font-mono">{w.phone}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded-full font-semibold ${w.status === "completed" ? "bg-green-100 text-green-700" : w.status === "rejected" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"}`}>
+                      {w.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[160px] truncate">
+                    {w.note ? (
+                      <span className={w.note.startsWith("PROFIT:") ? "text-purple-600 font-semibold" : ""}>{w.note}</span>
+                    ) : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{format(new Date(w.createdAt), "MMM d, HH:mm")}</td>
                 </tr>
               ))}
             </tbody>
@@ -643,6 +713,50 @@ export default function AdminPanel() {
   const [detailId, setDetailId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
+  const [profitOpen, setProfitOpen] = useState(false);
+  const [profitPhone, setProfitPhone] = useState("");
+  const [profitNote, setProfitNote] = useState("");
+  const [profitAmount, setProfitAmount] = useState("");
+
+  const { data: profit, refetch: refetchProfit } = useQuery<{
+    activationFees: string;
+    b2cFees: string;
+    pesapalFees: string;
+    withdrawalFees: string;
+    totalProfit: string;
+    profitWithdrawn: string;
+    profitAvailable: string;
+  }>({
+    queryKey: ["admin-profit"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/profit`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+  });
+
+  const withdrawProfitMutation = useMutation({
+    mutationFn: async ({ amount, phone, note: wNote }: { amount: string; phone: string; note: string }) => {
+      const r = await fetch(`${API_BASE}/api/admin/withdraw-profit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ amount, phone, note: wNote }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "Profit withdrawal recorded", description: "Marked as pending — remember to send the M-Pesa manually." });
+      setProfitOpen(false);
+      setProfitPhone("");
+      setProfitAmount("");
+      setProfitNote("");
+      refetchProfit();
+      qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   const { data: stats } = useQuery<{
     totalTransactions: number;
@@ -770,9 +884,22 @@ export default function AdminPanel() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card className="border-green-200 bg-green-50">
           <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Wallet className="w-4 h-4 text-green-700" />
-              <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">Platform Wallet</span>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-green-700" />
+                <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">Platform Wallet</span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-green-400 text-green-700 hover:bg-green-100 gap-1"
+                onClick={() => {
+                  setProfitAmount(profit?.profitAvailable ?? "");
+                  setProfitOpen(true);
+                }}
+              >
+                <TrendingUp className="w-3 h-3" /> Withdraw Profit
+              </Button>
             </div>
             <div className="text-3xl font-bold text-green-800">
               KES {Number(stats?.walletBalance ?? 0).toLocaleString()}
@@ -781,6 +908,16 @@ export default function AdminPanel() {
               Available: KES {Number(stats?.walletAvailable ?? 0).toLocaleString()} · Withdrawn: KES {Number(stats?.totalWithdrawn ?? 0).toLocaleString()}
             </p>
             <p className="text-xs text-green-600 mt-0.5">{stats?.walletTxCount ?? 0} platform-collected transactions</p>
+            {profit && (
+              <div className="mt-2 pt-2 border-t border-green-200">
+                <p className="text-xs text-green-700 font-semibold">
+                  Platform Profit: KES {Number(profit.profitAvailable).toLocaleString(undefined, { minimumFractionDigits: 2 })} available
+                </p>
+                <p className="text-xs text-green-600">
+                  Total earned: KES {Number(profit.totalProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })} · Withdrawn: KES {Number(profit.profitWithdrawn).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -931,6 +1068,85 @@ export default function AdminPanel() {
       {tab === "transactions" && <TransactionsTab />}
       {tab === "settings" && <SettingsTab />}
       {tab === "security" && <SecurityTab />}
+
+      {/* Profit Withdrawal Dialog */}
+      <Dialog open={profitOpen} onOpenChange={open => { if (!open) setProfitOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-green-600" /> Withdraw Platform Profit
+            </DialogTitle>
+          </DialogHeader>
+          {profit && (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="font-semibold text-green-800 mb-2">Profit Breakdown</div>
+                <div className="flex justify-between text-green-700">
+                  <span>Activation fees:</span>
+                  <span className="font-medium">KES {Number(profit.activationFees).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-green-700">
+                  <span>B2C service fees:</span>
+                  <span className="font-medium">KES {Number(profit.b2cFees).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-green-700">
+                  <span>Card/Airtel platform fees:</span>
+                  <span className="font-medium">KES {Number(profit.pesapalFees).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-green-700">
+                  <span>Withdrawal fees (2.5%):</span>
+                  <span className="font-medium">KES {Number(profit.withdrawalFees).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="border-t border-green-300 pt-1.5 flex justify-between font-bold text-green-800">
+                  <span>Available to withdraw:</span>
+                  <span>KES {Number(profit.profitAvailable).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Amount (KES)</Label>
+                <Input
+                  type="number"
+                  value={profitAmount}
+                  onChange={e => setProfitAmount(e.target.value)}
+                  max={profit.profitAvailable}
+                  placeholder={`Max: ${profit.profitAvailable}`}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Your M-Pesa Phone</Label>
+                <Input
+                  type="tel"
+                  value={profitPhone}
+                  onChange={e => setProfitPhone(e.target.value)}
+                  placeholder="254712345678"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Note (optional)</Label>
+                <Input
+                  value={profitNote}
+                  onChange={e => setProfitNote(e.target.value)}
+                  placeholder="e.g. Monthly profit withdrawal"
+                />
+              </div>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                This records the withdrawal as pending. You must manually send the M-Pesa and then mark it as complete.
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setProfitOpen(false)}>Cancel</Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 gap-2"
+                  onClick={() => withdrawProfitMutation.mutate({ amount: profitAmount, phone: profitPhone, note: profitNote })}
+                  disabled={withdrawProfitMutation.isPending || !profitAmount || !profitPhone}
+                >
+                  {withdrawProfitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+                  Record Withdrawal
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!detailId} onOpenChange={open => { if (!open) { setDetailId(null); setNote(""); } }}>
         <DialogContent className="sm:max-w-lg">

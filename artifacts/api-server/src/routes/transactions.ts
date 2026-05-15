@@ -10,11 +10,19 @@ router.get("/transactions", requireAuth, async (req: AuthRequest, res) => {
   const page = parseInt(String(req.query.page ?? "1"));
   const limit = Math.min(parseInt(String(req.query.limit ?? "20")), 100);
   const status = req.query.status as string | undefined;
+  const date = req.query.date as string | undefined;
   const offset = (page - 1) * limit;
 
   const conditions = [eq(transactionsTable.userId, req.userId!)];
-  if (status) {
+  if (status && status !== "all") {
     conditions.push(eq(transactionsTable.status, status));
+  }
+  if (date === "today") {
+    conditions.push(sql`${transactionsTable.createdAt}::date = CURRENT_DATE`);
+  } else if (date === "week") {
+    conditions.push(sql`${transactionsTable.createdAt} >= CURRENT_DATE - INTERVAL '7 days'`);
+  } else if (date === "month") {
+    conditions.push(sql`${transactionsTable.createdAt} >= CURRENT_DATE - INTERVAL '30 days'`);
   }
 
   const [{ total }] = await db
@@ -38,6 +46,7 @@ router.get("/transactions", requireAuth, async (req: AuthRequest, res) => {
       phoneNumber: tx.phoneNumber,
       amount: tx.amount,
       status: tx.status,
+      statusDescription: tx.statusDescription,
       accountReference: tx.accountReference,
       transactionDesc: tx.transactionDesc,
       createdAt: tx.createdAt,

@@ -25,6 +25,7 @@ import B2C from "@/pages/b2c";
 import CardPayments from "@/pages/card";
 import CardTest from "@/pages/card-test";
 import Saas from "@/pages/saas";
+import Webhooks from "@/pages/webhooks";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -74,6 +75,9 @@ function Router() {
       </Route>
       <Route path="/saas">
         <ProtectedRoute><Saas /></ProtectedRoute>
+      </Route>
+      <Route path="/webhooks">
+        <ProtectedRoute><Webhooks /></ProtectedRoute>
       </Route>
       <Route path="/admin">
         <AdminRoute><AdminPanel /></AdminRoute>

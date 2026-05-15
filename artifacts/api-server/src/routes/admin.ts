@@ -9,8 +9,9 @@ import {
   securityEventsTable,
   b2cTransactionsTable,
   pesapalTransactionsTable,
+  activationPaymentsTable,
 } from "@workspace/db";
-import { eq, count, sql, isNull, desc } from "drizzle-orm";
+import { eq, count, sql, isNull, desc, and } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 import { logSecurityEvent } from "../lib/securityLogger";
 import { invalidateMpesaSettingsCache } from "../lib/mpesa";
@@ -443,6 +444,95 @@ router.get("/admin/security-events", requireAuth, requireAdmin, async (req, res)
 router.delete("/admin/security-events", requireAuth, requireAdmin, async (req, res) => {
   await db.delete(securityEventsTable);
   res.json({ message: "Security events cleared" });
+});
+
+// ─── Profit Calculation ───────────────────────────────────────────────────────
+
+// GET /admin/profit — calculate platform profit breakdown
+router.get("/admin/profit", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const [actResult] = await db.select({
+    total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text`,
+  }).from(activationPaymentsTable).where(sql`status = 'completed'`);
+
+  const [b2cFeeResult] = await db.select({
+    total: sql<string>`COALESCE(SUM(fee_amount::numeric), 0)::text`,
+  }).from(b2cTransactionsTable).where(and(
+    sql`status = 'completed'`,
+    sql`fee_amount IS NOT NULL`
+  ));
+
+  const [pesapalFeeResult] = await db.select({
+    total: sql<string>`COALESCE(SUM(platform_fee::numeric), 0)::text`,
+  }).from(pesapalTransactionsTable).where(sql`status = 'completed'`);
+
+  const [wdrFeeResult] = await db.select({
+    total: sql<string>`COALESCE(SUM(amount::numeric) * 0.025, 0)::text`,
+  }).from(withdrawalRequestsTable).where(sql`status = 'completed' AND (note IS NULL OR note NOT LIKE 'PROFIT:%')`);
+
+  const [profitWdnResult] = await db.select({
+    total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text`,
+  }).from(withdrawalRequestsTable).where(sql`note LIKE 'PROFIT:%' AND status IN ('pending', 'processing', 'completed')`);
+
+  const activationFees = Number(actResult.total);
+  const b2cFees = Number(b2cFeeResult.total);
+  const pesapalFees = Number(pesapalFeeResult.total);
+  const withdrawalFees = Number(wdrFeeResult.total);
+  const totalProfit = activationFees + b2cFees + pesapalFees + withdrawalFees;
+  const profitWithdrawn = Number(profitWdnResult.total);
+  const profitAvailable = Math.max(0, totalProfit - profitWithdrawn);
+
+  res.json({
+    activationFees: activationFees.toFixed(2),
+    b2cFees: b2cFees.toFixed(2),
+    pesapalFees: pesapalFees.toFixed(2),
+    withdrawalFees: withdrawalFees.toFixed(2),
+    totalProfit: totalProfit.toFixed(2),
+    profitWithdrawn: profitWithdrawn.toFixed(2),
+    profitAvailable: profitAvailable.toFixed(2),
+  });
+});
+
+// POST /admin/withdraw-profit — record a profit withdrawal (manual B2C)
+router.post("/admin/withdraw-profit", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const { amount, phone, note } = req.body;
+  if (!amount || !phone) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "amount and phone are required" });
+    return;
+  }
+  const requestAmount = Number(amount);
+  if (isNaN(requestAmount) || requestAmount <= 0) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid amount" });
+    return;
+  }
+
+  // Check available profit
+  const [actResult] = await db.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text` }).from(activationPaymentsTable).where(sql`status = 'completed'`);
+  const [b2cFeeResult] = await db.select({ total: sql<string>`COALESCE(SUM(fee_amount::numeric), 0)::text` }).from(b2cTransactionsTable).where(sql`status = 'completed' AND fee_amount IS NOT NULL`);
+  const [pesapalFeeResult] = await db.select({ total: sql<string>`COALESCE(SUM(platform_fee::numeric), 0)::text` }).from(pesapalTransactionsTable).where(sql`status = 'completed'`);
+  const [wdrFeeResult] = await db.select({ total: sql<string>`COALESCE(SUM(amount::numeric) * 0.025, 0)::text` }).from(withdrawalRequestsTable).where(sql`status = 'completed' AND (note IS NULL OR note NOT LIKE 'PROFIT:%')`);
+  const [profitWdnResult] = await db.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text` }).from(withdrawalRequestsTable).where(sql`note LIKE 'PROFIT:%' AND status IN ('pending', 'processing', 'completed')`);
+
+  const totalProfit = Number(actResult.total) + Number(b2cFeeResult.total) + Number(pesapalFeeResult.total) + Number(wdrFeeResult.total);
+  const profitAvailable = Math.max(0, totalProfit - Number(profitWdnResult.total));
+
+  if (requestAmount > profitAvailable) {
+    res.status(400).json({
+      error: "INSUFFICIENT_PROFIT",
+      message: `Only KES ${profitAvailable.toFixed(2)} available as profit`,
+      profitAvailable: profitAvailable.toFixed(2),
+    });
+    return;
+  }
+
+  const [record] = await db.insert(withdrawalRequestsTable).values({
+    userId: req.userId!,
+    amount: String(requestAmount),
+    phone,
+    status: "pending",
+    note: `PROFIT: ${note || "Admin profit withdrawal"}`,
+  }).returning();
+
+  res.status(201).json({ message: "Profit withdrawal recorded", withdrawal: record });
 });
 
 export default router;

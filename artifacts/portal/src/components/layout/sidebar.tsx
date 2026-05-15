@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X, ArrowUpRight, CreditCard, FlaskConical, Layers, Lock } from "lucide-react";
+import { LayoutDashboard, Receipt, KeyRound, Building2, BookOpen, LogOut, Loader2, Link2, Smartphone, Zap, CheckCircle2, AlertTriangle, Menu, X, ArrowUpRight, CreditCard, FlaskConical, Layers, Lock, Rss } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, nexusOnly: false },
   { href: "/transactions", label: "Transactions", icon: Receipt, nexusOnly: false },
   { href: "/api-keys", label: "API Keys", icon: KeyRound, nexusOnly: false },
+  { href: "/webhooks", label: "Webhooks", icon: Rss, nexusOnly: false },
   { href: "/settlement", label: "Settlement", icon: Building2, nexusOnly: false },
   { href: "/payment-links", label: "Payment Links", icon: Link2, nexusOnly: false },
   { href: "/card", label: "Card & Airtel Pay", icon: CreditCard, nexusOnly: false },

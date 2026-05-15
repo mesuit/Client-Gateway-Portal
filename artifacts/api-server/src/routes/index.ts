@@ -15,6 +15,7 @@ import b2cRouter from "./b2c";
 import b2cWalletRouter from "./b2c-wallet";
 import pesapalRouter from "./pesapal";
 import saasRouter from "./saas";
+import webhooksRouter from "./webhooks";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(b2cRouter);
 router.use(b2cWalletRouter);
 router.use(pesapalRouter);
 router.use(saasRouter);
+router.use(webhooksRouter);
 
 export default router;

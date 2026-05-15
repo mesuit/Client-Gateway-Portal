@@ -160,7 +160,17 @@ router.get("/pesapal/callback", async (req, res) => {
   }
   const baseUrl = process.env.CALLBACK_BASE_URL ?? "https://pay.makamesco-tech.co.ke";
   const returnPage = OrderMerchantReference?.startsWith("NEXUS-") ? "/card-test" : "/card";
-  res.redirect(`${baseUrl}${returnPage}?status=done&tracking=${encodeURIComponent(OrderTrackingId ?? "")}&ref=${encodeURIComponent(OrderMerchantReference ?? "")}`);
+  // Re-check status for redirect (variables scoped above in try block)
+  let finalStatus = "pending";
+  try {
+    if (OrderTrackingId) {
+      const sr = await getTransactionStatus(OrderTrackingId);
+      const desc = sr.payment_status_description?.toLowerCase() ?? "";
+      if (desc === "completed") finalStatus = "completed";
+      else if (["failed", "invalid", "reversed"].includes(desc)) finalStatus = "failed";
+    }
+  } catch { /* ignore, use pending */ }
+  res.redirect(`${baseUrl}${returnPage}?status=${finalStatus}&tracking=${encodeURIComponent(OrderTrackingId ?? "")}&ref=${encodeURIComponent(OrderMerchantReference ?? "")}`);
 });
 
 // GET /payments/pesapal/status/:orderTrackingId — check status (API key auth)

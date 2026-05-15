@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { fireWebhooks } from "../lib/webhooks";
 import { db } from "@workspace/db";
 import { transactionsTable, settlementAccountsTable, apiKeysTable, usersTable, saasTenantsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
@@ -185,10 +186,25 @@ router.post("/payments/callback", async (req, res) => {
 
     const status = resultCode === 0 ? "completed" : resultCode === 1032 ? "cancelled" : "failed";
 
-    await db
+    const updated = await db
       .update(transactionsTable)
       .set({ status, statusCode: String(resultCode), statusDescription: resultDesc, mpesaReceiptNumber, callbackMetadata })
-      .where(eq(transactionsTable.checkoutRequestId, checkoutRequestId));
+      .where(eq(transactionsTable.checkoutRequestId, checkoutRequestId))
+      .returning();
+
+    if (updated.length > 0 && (status === "completed" || status === "failed")) {
+      const tx = updated[0];
+      fireWebhooks(tx.userId, `payment.${status}`, {
+        id: tx.id,
+        checkoutRequestId: tx.checkoutRequestId,
+        status: tx.status,
+        amount: tx.amount,
+        phoneNumber: tx.phoneNumber,
+        mpesaReceiptNumber: tx.mpesaReceiptNumber,
+        accountReference: tx.accountReference,
+        createdAt: tx.createdAt,
+      }).catch((err: unknown) => logger.warn(err, "Webhook delivery failed"));
+    }
 
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });
   } catch (err) {
