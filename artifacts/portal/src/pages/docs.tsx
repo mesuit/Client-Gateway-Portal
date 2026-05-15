@@ -1110,9 +1110,137 @@ const tenant = await res.json();
         </div>
       </section>
 
+      {/* ── WEBHOOKS ─────────────────────────────────────────────── */}
+      <section className="space-y-5">
+        <h3 className="text-xl font-bold">9. Webhooks</h3>
+        <p className="text-muted-foreground">
+          Webhooks let your server receive real-time HTTP POST notifications when payment events occur — no polling required.
+          Register up to 5 webhook endpoints from the <strong>Webhooks</strong> section in your dashboard.
+        </p>
+
+        <div className="space-y-3">
+          <h4 className="font-semibold">Available Events</h4>
+          <div className="border rounded-lg overflow-hidden text-sm">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Event</th>
+                  <th className="px-4 py-3 font-medium">When it fires</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {[
+                  ["payment.completed", "STK Push or tenant payment confirmed by Safaricom"],
+                  ["payment.failed", "STK Push payment failed (wrong PIN, insufficient funds, etc.)"],
+                  ["payment.cancelled", "Customer dismissed the M-Pesa PIN prompt"],
+                  ["subscription.activated", "SaaS subscription payment confirmed (Nexus Pay only)"],
+                ].map(([event, desc]) => (
+                  <tr key={event}>
+                    <td className="px-4 py-3 font-mono text-blue-700 text-xs">{event}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <h4 className="font-semibold">Webhook Payload</h4>
+          <p className="text-sm text-muted-foreground">Your endpoint receives a signed JSON POST with this structure:</p>
+          <div className="rounded-lg overflow-hidden">
+            <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">JSON payload</div>
+            <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto">{`{
+  "event": "payment.completed",
+  "timestamp": "2025-01-15T10:30:00.000Z",
+  "data": {
+    "id": 42,
+    "phoneNumber": "254712345678",
+    "amount": "1500.00",
+    "mpesaReceiptNumber": "QGH5XJK92L",
+    "accountReference": "INV-001",
+    "transactionDesc": "Order payment",
+    "status": "completed",
+    "statusDescription": "The service request is processed successfully.",
+    "createdAt": "2025-01-15T10:29:45.000Z"
+  }
+}`}</pre>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <h4 className="font-semibold">Signature Verification</h4>
+          <p className="text-sm text-muted-foreground">
+            Every request includes an <code className="bg-gray-100 rounded px-1">X-Webhook-Signature</code> header.
+            Verify it using HMAC-SHA256 with your webhook secret to ensure authenticity.
+          </p>
+          <div className="rounded-lg overflow-hidden">
+            <div className="bg-gray-800 text-gray-400 text-xs px-4 py-2 font-mono">Node.js — verify signature</div>
+            <pre className="bg-gray-900 text-green-300 text-xs p-4 overflow-x-auto">{`import crypto from 'crypto';
+import express from 'express';
+
+const app = express();
+app.use(express.json());
+
+const WEBHOOK_SECRET = 'whsec_your_secret_from_dashboard';
+
+app.post('/webhook', (req, res) => {
+  const signature = req.headers['x-webhook-signature'];
+  const body = JSON.stringify(req.body);
+
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(body)
+    .digest('hex');
+
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  const { event, data } = req.body;
+
+  if (event === 'payment.completed') {
+    console.log(\`Payment \${data.mpesaReceiptNumber} — KES \${data.amount} ✅\`);
+    // Fulfill order, send receipt, update DB, etc.
+  }
+
+  res.json({ received: true }); // Respond quickly — timeouts mark the delivery as failed
+});`}</pre>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <h4 className="font-semibold">API Endpoints</h4>
+          <div className="grid grid-cols-1 gap-2 text-sm">
+            {[
+              ["GET", "/api/webhooks", "List all registered webhooks for your account"],
+              ["POST", "/api/webhooks", "Register a new webhook (url, events)"],
+              ["PATCH", "/api/webhooks/:id", "Enable or disable a webhook"],
+              ["DELETE", "/api/webhooks/:id", "Remove a webhook permanently"],
+            ].map(([method, path, desc]) => (
+              <div key={path} className="flex items-start gap-3 border rounded-lg px-4 py-3">
+                <span className={`font-mono text-xs font-bold px-1.5 py-0.5 rounded shrink-0 ${method === "GET" ? "bg-blue-100 text-blue-700" : method === "POST" ? "bg-green-100 text-green-700" : method === "PATCH" ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-600"}`}>{method}</span>
+                <span className="font-mono text-xs text-muted-foreground shrink-0">{path}</span>
+                <span className="text-muted-foreground text-xs">{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          <p className="font-semibold mb-1">Tips</p>
+          <ul className="space-y-1 list-disc list-inside text-amber-700">
+            <li>Respond with HTTP 200 as fast as possible. Slow endpoints (&gt;10 s) are marked as failed.</li>
+            <li>Failed deliveries are retried up to 3 times with exponential backoff.</li>
+            <li>Always verify the <code className="bg-amber-100 px-1 rounded">X-Webhook-Signature</code> before processing.</li>
+            <li>SaaS tenant payments (via <code className="bg-amber-100 px-1 rounded">tenantCode</code>) fire <code className="bg-amber-100 px-1 rounded">payment.completed</code> to the owning merchant's webhooks.</li>
+          </ul>
+        </div>
+      </section>
+
       {/* ── ERROR CODES ─────────────────────────────────────────── */}
       <section className="space-y-4">
-        <h3 className="text-xl font-bold">9. Error Codes</h3>
+        <h3 className="text-xl font-bold">10. Error Codes</h3>
         <div className="border rounded-lg overflow-hidden text-sm">
           <table className="w-full text-left">
             <thead className="bg-gray-50 dark:bg-gray-900 border-b">

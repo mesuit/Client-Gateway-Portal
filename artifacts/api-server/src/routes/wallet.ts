@@ -9,7 +9,6 @@ import { logger } from "../lib/logger";
 const router = Router();
 
 async function getAvailableBalance(userId: number): Promise<{ available: number; mpesaCollected: number; pesapalCollected: number; totalWithdrawn: number }> {
-  // M-Pesa: completed transactions with no settlement account (collected by platform)
   const [mpesa] = await db
     .select({
       balance: sql<string>`COALESCE(SUM(CASE WHEN ${transactionsTable.status} = 'completed' THEN ${transactionsTable.amount}::numeric ELSE 0 END), 0)::text`,
@@ -20,7 +19,6 @@ async function getAvailableBalance(userId: number): Promise<{ available: number;
       isNull(transactionsTable.settlementAccountId)
     ));
 
-  // PesaPal: net amounts from completed card/Airtel payments (after 10% fee)
   const [pesapal] = await db
     .select({
       balance: sql<string>`COALESCE(SUM(CASE WHEN ${pesapalTransactionsTable.status} = 'completed' THEN ${pesapalTransactionsTable.netAmount}::numeric ELSE 0 END), 0)::text`,
@@ -87,26 +85,64 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
     return;
   }
 
-  const { available } = await getAvailableBalance(req.userId!);
+  const userId = req.userId!;
 
-  if (requestAmount > available) {
-    res.status(400).json({
-      error: "INSUFFICIENT_BALANCE",
-      message: `Available balance is KES ${available.toFixed(2)}`,
-    });
-    return;
-  }
-
-  // Normalise phone to 254XXXXXXXXX
   let formattedPhone = String(phone).replace(/\D/g, "");
   if (formattedPhone.startsWith("0")) formattedPhone = "254" + formattedPhone.slice(1);
   if (!formattedPhone.startsWith("254")) formattedPhone = "254" + formattedPhone;
 
-  // ── Auto-disburse via B2C if credentials are configured ──────────────────
+  // ── STEP 1: Atomically check balance and reserve withdrawal (advisory lock) ──
+  let pendingRecord: typeof withdrawalRequestsTable.$inferSelect;
+  try {
+    pendingRecord = await db.transaction(async (tx) => {
+      // Per-user advisory lock prevents concurrent withdrawals from the same account
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}::bigint)`);
+
+      // Re-check balance inside the lock
+      const [mpesa] = await tx.select({
+        balance: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN amount::numeric ELSE 0 END), 0)::text`,
+      }).from(transactionsTable).where(and(eq(transactionsTable.userId, userId), isNull(transactionsTable.settlementAccountId)));
+
+      const [pesapal] = await tx.select({
+        balance: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN net_amount::numeric ELSE 0 END), 0)::text`,
+      }).from(pesapalTransactionsTable).where(eq(pesapalTransactionsTable.userId, userId));
+
+      const [withdrawn] = await tx.select({
+        total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text`,
+      }).from(withdrawalRequestsTable).where(and(
+        eq(withdrawalRequestsTable.userId, userId),
+        sql`status IN ('pending', 'processing', 'completed')`
+      ));
+
+      const available = Math.max(0, Number(mpesa.balance) + Number(pesapal.balance) - Number(withdrawn.total));
+
+      if (requestAmount > available) {
+        const err = new Error(`Available balance is KES ${available.toFixed(2)}`);
+        (err as any).code = "INSUFFICIENT_BALANCE";
+        throw err;
+      }
+
+      const [record] = await tx.insert(withdrawalRequestsTable).values({
+        userId,
+        amount: String(requestAmount),
+        phone: formattedPhone,
+        status: "pending",
+      }).returning();
+
+      return record;
+    });
+  } catch (err: any) {
+    if (err?.code === "INSUFFICIENT_BALANCE") {
+      res.status(400).json({ error: "INSUFFICIENT_BALANCE", message: err.message });
+      return;
+    }
+    throw err;
+  }
+
+  // ── STEP 2: Auto-disburse via B2C if credentials are configured ──────────
   const b2cReady = await isB2CConfigured();
 
   if (b2cReady) {
-    // 2.5% platform fee on every withdrawal
     const PLATFORM_FEE_RATE = 0.025;
     const platformFee = parseFloat((requestAmount * PLATFORM_FEE_RATE).toFixed(2));
     const netAmount   = parseFloat((requestAmount - platformFee).toFixed(2));
@@ -125,23 +161,20 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
         timeoutUrl,
       });
 
-      const [request] = await db.insert(withdrawalRequestsTable).values({
-        userId: req.userId!,
-        amount: String(requestAmount),
-        phone: formattedPhone,
+      const [updatedRecord] = await db.update(withdrawalRequestsTable).set({
         status: "processing",
         note: `Auto-processed via B2C. Platform fee: KES ${platformFee.toFixed(2)} (2.5%). Net to merchant: KES ${netAmount.toFixed(2)}.`,
         b2cConversationId: b2cResult.ConversationID,
         autoProcessed: "true",
-      }).returning();
+      }).where(eq(withdrawalRequestsTable.id, pendingRecord.id)).returning();
 
       logger.info(
-        { userId: req.userId, amount: requestAmount, platformFee, netAmount, conversationId: b2cResult.ConversationID },
+        { userId, amount: requestAmount, platformFee, netAmount, conversationId: b2cResult.ConversationID },
         "Auto-withdrawal B2C initiated"
       );
 
       res.status(201).json({
-        ...request,
+        ...updatedRecord,
         autoProcessed: true,
         platformFee,
         netAmount,
@@ -149,22 +182,19 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
       });
       return;
     } catch (err) {
-      // B2C initiation failed — fall through to manual queue
       logger.error({ err }, "Auto-withdrawal B2C initiation failed, falling back to manual");
     }
   }
 
   // ── Manual fallback (no B2C creds, or B2C call failed) ───────────────────
-  const [request] = await db.insert(withdrawalRequestsTable).values({
-    userId: req.userId!,
-    amount: String(requestAmount),
-    phone: formattedPhone,
-    status: "pending",
-    note: b2cReady ? "B2C auto-processing failed — queued for manual review" : undefined,
-  }).returning();
+  if (b2cReady) {
+    await db.update(withdrawalRequestsTable).set({
+      note: "B2C auto-processing failed — queued for manual review",
+    }).where(eq(withdrawalRequestsTable.id, pendingRecord.id));
+  }
 
   res.status(201).json({
-    ...request,
+    ...pendingRecord,
     autoProcessed: false,
     message: b2cReady
       ? "B2C processing unavailable. Your withdrawal has been queued for manual review."

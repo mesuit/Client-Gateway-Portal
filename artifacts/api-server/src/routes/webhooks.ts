@@ -39,7 +39,7 @@ router.post("/webhooks", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const secret = `whsec_${crypto.randomBytes(24).toString("hex")}`;
-  const allowedEvents = ["payment.completed", "payment.failed", "payment.cancelled"];
+  const allowedEvents = ["payment.completed", "payment.failed", "payment.cancelled", "subscription.activated"];
   const eventList = Array.isArray(events)
     ? events.filter((e: string) => allowedEvents.includes(e)).join(",")
     : "payment.completed,payment.failed";

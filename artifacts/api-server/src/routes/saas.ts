@@ -6,6 +6,7 @@ import { requireAuth, type AuthRequest } from "../lib/auth";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
+import { fireWebhooks } from "../lib/webhooks";
 
 const router = Router();
 
@@ -123,11 +124,32 @@ router.post("/saas/activate/callback", async (req, res) => {
           .set({ status: "active", mpesaReceiptNumber, activatedAt: now, expiresAt })
           .where(eq(saasSubscriptionsTable.checkoutRequestId, checkoutRequestId));
         logger.info({ userId: sub.userId, plan: sub.plan, expiresAt }, "SaaS subscription activated");
+
+        // Fire webhook for subscription activation
+        fireWebhooks(sub.userId, "subscription.activated", {
+          type: "subscription",
+          plan: sub.plan,
+          amount: sub.amount,
+          mpesaReceiptNumber,
+          activatedAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+        }).catch(err => logger.error({ err }, "SaaS webhook fire failed"));
       }
     } else {
+      const [sub] = await db.select().from(saasSubscriptionsTable).where(eq(saasSubscriptionsTable.checkoutRequestId, checkoutRequestId));
       await db.update(saasSubscriptionsTable)
         .set({ status: "pending" })
         .where(eq(saasSubscriptionsTable.checkoutRequestId, checkoutRequestId));
+
+      // Fire webhook for failed subscription payment
+      if (sub) {
+        fireWebhooks(sub.userId, "payment.failed", {
+          type: "subscription",
+          plan: sub.plan,
+          amount: sub.amount,
+          reason: resultDesc,
+        }).catch(err => logger.error({ err }, "SaaS failed webhook fire failed"));
+      }
     }
 
     res.json({ ResultCode: 0, ResultDesc: "Accepted" });

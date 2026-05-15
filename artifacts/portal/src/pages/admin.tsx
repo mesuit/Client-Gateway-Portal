@@ -723,6 +723,7 @@ export default function AdminPanel() {
     b2cFees: string;
     pesapalFees: string;
     withdrawalFees: string;
+    saasRevenue: string;
     totalProfit: string;
     profitWithdrawn: string;
     profitAvailable: string;
@@ -746,8 +747,13 @@ export default function AdminPanel() {
       if (!r.ok) throw new Error(json.message);
       return json;
     },
-    onSuccess: () => {
-      toast({ title: "Profit withdrawal recorded", description: "Marked as pending — remember to send the M-Pesa manually." });
+    onSuccess: (data) => {
+      toast({
+        title: data?.autoProcessed ? "B2C initiated" : "Withdrawal queued",
+        description: data?.autoProcessed
+          ? "M-Pesa B2C disbursement has been initiated automatically."
+          : "Queued for manual processing.",
+      });
       setProfitOpen(false);
       setProfitPhone("");
       setProfitAmount("");
@@ -1097,6 +1103,12 @@ export default function AdminPanel() {
                   <span>Withdrawal fees (2.5%):</span>
                   <span className="font-medium">KES {Number(profit.withdrawalFees).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
+                {Number(profit.saasRevenue) > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>SaaS subscriptions:</span>
+                    <span className="font-medium">KES {Number(profit.saasRevenue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
                 <div className="border-t border-green-300 pt-1.5 flex justify-between font-bold text-green-800">
                   <span>Available to withdraw:</span>
                   <span>KES {Number(profit.profitAvailable).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -1129,8 +1141,8 @@ export default function AdminPanel() {
                   placeholder="e.g. Monthly profit withdrawal"
                 />
               </div>
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                This records the withdrawal as pending. You must manually send the M-Pesa and then mark it as complete.
+              <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                The system will automatically disburse via M-Pesa B2C if configured. No platform fee is deducted — you receive the full amount.
               </p>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setProfitOpen(false)}>Cancel</Button>
@@ -1140,7 +1152,7 @@ export default function AdminPanel() {
                   disabled={withdrawProfitMutation.isPending || !profitAmount || !profitPhone}
                 >
                   {withdrawProfitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
-                  Record Withdrawal
+                  Withdraw Profit
                 </Button>
               </DialogFooter>
             </div>

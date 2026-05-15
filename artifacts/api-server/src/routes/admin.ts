@@ -10,11 +10,13 @@ import {
   b2cTransactionsTable,
   pesapalTransactionsTable,
   activationPaymentsTable,
+  saasSubscriptionsTable,
 } from "@workspace/db";
 import { eq, count, sql, isNull, desc, and } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 import { logSecurityEvent } from "../lib/securityLogger";
-import { invalidateMpesaSettingsCache } from "../lib/mpesa";
+import { invalidateMpesaSettingsCache, isB2CConfigured, initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -48,8 +50,9 @@ router.get("/admin/stats", requireAuth, requireAdmin, async (req, res) => {
     walletTxCount: sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
   }).from(transactionsTable).where(isNull(transactionsTable.settlementAccountId));
 
+  // Exclude PROFIT withdrawals — they come from fees, not from the merchant wallet pool
   const [withdrawn] = await db.select({
-    totalWithdrawn: sql<string>`COALESCE(SUM(amount::numeric) FILTER (WHERE status IN ('pending', 'processing', 'completed')), 0)::text`,
+    totalWithdrawn: sql<string>`COALESCE(SUM(amount::numeric) FILTER (WHERE status IN ('pending', 'processing', 'completed') AND (note IS NULL OR note NOT LIKE 'PROFIT:%')), 0)::text`,
   }).from(withdrawalRequestsTable);
 
   const walletBalance = Number(walletStats.walletBalance);
@@ -473,11 +476,17 @@ router.get("/admin/profit", requireAuth, requireAdmin, async (req: AuthRequest, 
     total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text`,
   }).from(withdrawalRequestsTable).where(sql`note LIKE 'PROFIT:%' AND status IN ('pending', 'processing', 'completed')`);
 
+  // SaaS subscription revenue (each active subscription was a paid plan)
+  const [saasResult] = await db.select({
+    total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text`,
+  }).from(saasSubscriptionsTable).where(sql`status IN ('active', 'expired') AND amount IS NOT NULL`);
+
   const activationFees = Number(actResult.total);
   const b2cFees = Number(b2cFeeResult.total);
   const pesapalFees = Number(pesapalFeeResult.total);
   const withdrawalFees = Number(wdrFeeResult.total);
-  const totalProfit = activationFees + b2cFees + pesapalFees + withdrawalFees;
+  const saasRevenue = Number(saasResult.total);
+  const totalProfit = activationFees + b2cFees + pesapalFees + withdrawalFees + saasRevenue;
   const profitWithdrawn = Number(profitWdnResult.total);
   const profitAvailable = Math.max(0, totalProfit - profitWithdrawn);
 
@@ -486,13 +495,14 @@ router.get("/admin/profit", requireAuth, requireAdmin, async (req: AuthRequest, 
     b2cFees: b2cFees.toFixed(2),
     pesapalFees: pesapalFees.toFixed(2),
     withdrawalFees: withdrawalFees.toFixed(2),
+    saasRevenue: saasRevenue.toFixed(2),
     totalProfit: totalProfit.toFixed(2),
     profitWithdrawn: profitWithdrawn.toFixed(2),
     profitAvailable: profitAvailable.toFixed(2),
   });
 });
 
-// POST /admin/withdraw-profit — record a profit withdrawal (manual B2C)
+// POST /admin/withdraw-profit — withdraw platform profit via auto B2C
 router.post("/admin/withdraw-profit", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
   const { amount, phone, note } = req.body;
   if (!amount || !phone) {
@@ -510,9 +520,10 @@ router.post("/admin/withdraw-profit", requireAuth, requireAdmin, async (req: Aut
   const [b2cFeeResult] = await db.select({ total: sql<string>`COALESCE(SUM(fee_amount::numeric), 0)::text` }).from(b2cTransactionsTable).where(sql`status = 'completed' AND fee_amount IS NOT NULL`);
   const [pesapalFeeResult] = await db.select({ total: sql<string>`COALESCE(SUM(platform_fee::numeric), 0)::text` }).from(pesapalTransactionsTable).where(sql`status = 'completed'`);
   const [wdrFeeResult] = await db.select({ total: sql<string>`COALESCE(SUM(amount::numeric) * 0.025, 0)::text` }).from(withdrawalRequestsTable).where(sql`status = 'completed' AND (note IS NULL OR note NOT LIKE 'PROFIT:%')`);
+  const [saasResult2] = await db.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text` }).from(saasSubscriptionsTable).where(sql`status IN ('active', 'expired') AND amount IS NOT NULL`);
   const [profitWdnResult] = await db.select({ total: sql<string>`COALESCE(SUM(amount::numeric), 0)::text` }).from(withdrawalRequestsTable).where(sql`note LIKE 'PROFIT:%' AND status IN ('pending', 'processing', 'completed')`);
 
-  const totalProfit = Number(actResult.total) + Number(b2cFeeResult.total) + Number(pesapalFeeResult.total) + Number(wdrFeeResult.total);
+  const totalProfit = Number(actResult.total) + Number(b2cFeeResult.total) + Number(pesapalFeeResult.total) + Number(wdrFeeResult.total) + Number(saasResult2.total);
   const profitAvailable = Math.max(0, totalProfit - Number(profitWdnResult.total));
 
   if (requestAmount > profitAvailable) {
@@ -524,15 +535,53 @@ router.post("/admin/withdraw-profit", requireAuth, requireAdmin, async (req: Aut
     return;
   }
 
+  // Normalise phone
+  let formattedPhone = String(phone).replace(/\D/g, "");
+  if (formattedPhone.startsWith("0")) formattedPhone = "254" + formattedPhone.slice(1);
+  if (!formattedPhone.startsWith("254")) formattedPhone = "254" + formattedPhone;
+
+  // Try auto-B2C disbursement (no platform fee — admin withdrawing their own profit)
+  const b2cReady = await isB2CConfigured();
+  if (b2cReady) {
+    const baseUrl = getCallbackBaseUrl(req);
+    try {
+      const b2cResult = await initiateB2C({
+        phoneNumber: formattedPhone,
+        amount: requestAmount,
+        commandId: "BusinessPayment",
+        remarks: note || "Admin profit withdrawal",
+        resultUrl: `${baseUrl}/api/payments/b2c/result`,
+        timeoutUrl: `${baseUrl}/api/payments/b2c/timeout`,
+      });
+
+      const [record] = await db.insert(withdrawalRequestsTable).values({
+        userId: req.userId!,
+        amount: String(requestAmount),
+        phone: formattedPhone,
+        status: "processing",
+        note: `PROFIT: ${note || "Admin profit withdrawal"} — auto B2C`,
+        b2cConversationId: b2cResult.ConversationID,
+        autoProcessed: "true",
+      }).returning();
+
+      logger.info({ userId: req.userId, amount: requestAmount, conversationId: b2cResult.ConversationID }, "Admin profit withdrawal B2C initiated");
+      res.status(201).json({ message: "Profit withdrawal initiated via M-Pesa B2C", withdrawal: record, autoProcessed: true });
+      return;
+    } catch (err) {
+      logger.error({ err }, "Admin profit B2C failed, falling back to manual");
+    }
+  }
+
+  // Fallback: queue as pending for manual processing
   const [record] = await db.insert(withdrawalRequestsTable).values({
     userId: req.userId!,
     amount: String(requestAmount),
-    phone,
+    phone: formattedPhone,
     status: "pending",
     note: `PROFIT: ${note || "Admin profit withdrawal"}`,
   }).returning();
 
-  res.status(201).json({ message: "Profit withdrawal recorded", withdrawal: record });
+  res.status(201).json({ message: "Profit withdrawal queued (B2C unavailable — send manually)", withdrawal: record, autoProcessed: false });
 });
 
 export default router;

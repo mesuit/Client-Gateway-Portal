@@ -27,6 +27,7 @@ const ALL_EVENTS = [
   { key: "payment.completed", label: "Payment Completed", desc: "Fires when an M-Pesa STK Push payment succeeds" },
   { key: "payment.failed", label: "Payment Failed", desc: "Fires when an STK Push payment fails or is rejected" },
   { key: "payment.cancelled", label: "Payment Cancelled", desc: "Fires when the user cancels the STK Push prompt" },
+  { key: "subscription.activated", label: "Subscription Activated", desc: "Fires when a SaaS subscription payment is confirmed (Nexus Pay only)" },
 ];
 
 export default function Webhooks() {
