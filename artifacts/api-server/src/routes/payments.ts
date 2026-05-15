@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { fireWebhooks } from "../lib/webhooks";
 import { db } from "@workspace/db";
-import { transactionsTable, settlementAccountsTable, apiKeysTable, usersTable, saasTenantsTable } from "@workspace/db";
+import { transactionsTable, settlementAccountsTable, apiKeysTable, usersTable, saasTenantsTable, saasSubscriptionsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import { requireApiKey, type ApiKeyRequest } from "../lib/apiKeyAuth";
 import { initiateSTKPush, getCallbackBaseUrl } from "../lib/mpesa";
@@ -57,6 +57,20 @@ router.post("/payments/stkpush", requireApiKey, async (req: ApiKeyRequest, res) 
 
   // tenantCode takes priority — look up tenant's settlement account
   if (tenantCode) {
+    // Verify the merchant has an active SaaS subscription before allowing multi-tenant routing
+    const [saasSub] = await db.select()
+      .from(saasSubscriptionsTable)
+      .where(and(eq(saasSubscriptionsTable.userId, userId), eq(saasSubscriptionsTable.status, "active")));
+    const saasActive = saasSub && (!saasSub.expiresAt || new Date(saasSub.expiresAt) > now);
+    if (!saasActive) {
+      res.status(403).json({
+        error: "SAAS_NOT_ACTIVE",
+        message: "Your SaaS Multi-Tenant subscription is not active — activate from your dashboard.",
+        activationRequired: true,
+      });
+      return;
+    }
+
     const [tenant] = await db.select().from(saasTenantsTable)
       .where(and(eq(saasTenantsTable.tenantCode, tenantCode), eq(saasTenantsTable.userId, userId), eq(saasTenantsTable.isActive, true)));
     if (!tenant) {

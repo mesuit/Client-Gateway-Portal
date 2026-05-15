@@ -563,19 +563,30 @@ window.location.href = redirectUrl;`}
 }`}</pre>
         </div>
 
-        <EndpointCard method="GET" path="/api/payments/pesapal/status/:orderTrackingId" description="Check the status of a PesaPal payment.">
+        <EndpointCard method="GET" path="/api/payments/pesapal/status/:orderTrackingId" description="Check the status of a PesaPal payment. When status is still pending, the server queries PesaPal directly and returns the latest real-time result — no IPN delay.">
           <CodeBlock
             curl={`curl ${BASE}/api/payments/pesapal/status/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \\
   -H "X-API-Key: YOUR_SECRET_KEY"`}
-            node={`const res = await fetch(
-  \`${BASE}/api/payments/pesapal/status/\${orderTrackingId}\`,
-  { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
-);
-
-const { status, amount, netAmount, paymentMethod } = await res.json();
-// status: 'pending' | 'completed' | 'failed' | 'cancelled'
-if (status === 'completed') {
-  console.log('Paid via:', paymentMethod); // e.g. "Airtel Money", "Visa"
+            node={`// Poll until the payment reaches a terminal state (up to 90 seconds)
+async function waitForPayment(orderTrackingId) {
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      \`${BASE}/api/payments/pesapal/status/\${orderTrackingId}\`,
+      { headers: { 'X-API-Key': 'YOUR_SECRET_KEY' } }
+    );
+    const data = await res.json();
+    // status: 'pending' | 'completed' | 'failed' | 'cancelled'
+    if (data.status === 'completed') {
+      console.log('Paid via:', data.paymentMethod); // "Airtel Money", "Visa", etc.
+      console.log('Net credited: KES', data.netAmount);
+      return data;   // ✅ done
+    }
+    if (data.status === 'failed')    throw new Error('Payment failed: ' + data.statusDescription);
+    if (data.status === 'cancelled') throw new Error('Payment cancelled by customer');
+    await new Promise(r => setTimeout(r, 4000)); // wait 4 s, then try again
+  }
+  throw new Error('Payment timed out after 90 s');
 }`}
           />
         </EndpointCard>

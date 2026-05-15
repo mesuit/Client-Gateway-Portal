@@ -16,6 +16,15 @@ import crypto from "crypto";
 
 const router = Router();
 
+/** Normalise PesaPal payment_status_description to our internal status */
+function resolveStatus(raw: string | undefined | null): "completed" | "failed" | "cancelled" | null {
+  const desc = (raw ?? "").toLowerCase().trim();
+  if (desc === "completed") return "completed";
+  if (desc === "cancelled") return "cancelled";
+  if (["failed", "invalid", "reversed"].includes(desc)) return "failed";
+  return null; // still pending / unknown
+}
+
 // POST /payments/pesapal/initiate — merchant-facing (API key auth)
 // Initiates a PesaPal payment (card, Airtel Money, etc.)
 router.post("/payments/pesapal/initiate", requireApiKey, async (req: ApiKeyRequest, res) => {
@@ -109,17 +118,14 @@ router.get("/pesapal/ipn", async (req, res) => {
     const statusResult = await getTransactionStatus(orderTrackingId);
     logger.info({ orderTrackingId, statusResult }, "PesaPal IPN received");
 
-    const isCompleted = statusResult.payment_status_description?.toLowerCase() === "completed";
-    const isFailed = ["failed", "invalid", "reversed"].includes(statusResult.payment_status_description?.toLowerCase());
+    const newStatus = resolveStatus(statusResult.payment_status_description);
 
-    if (isCompleted || isFailed) {
-      const status = isCompleted ? "completed" : "failed";
-
+    if (newStatus) {
       await db
         .update(pesapalTransactionsTable)
         .set({
           orderTrackingId,
-          status,
+          status: newStatus,
           paymentMethod: statusResult.payment_method ?? null,
           statusCode: String(statusResult.status_code ?? ""),
           statusDescription: statusResult.payment_status_description ?? null,
@@ -134,19 +140,23 @@ router.get("/pesapal/ipn", async (req, res) => {
   res.json({ orderNotificationType: "IPNCHANGE", orderTrackingId, orderMerchantReference, status: "200" });
 });
 
-// POST /pesapal/callback — redirect after payment (public)
+// GET /pesapal/callback — customer browser redirect after payment (public)
 router.get("/pesapal/callback", async (req, res) => {
   const { OrderTrackingId, OrderMerchantReference } = req.query as Record<string, string>;
+
+  let finalStatus = "pending";
+
   if (OrderTrackingId) {
     try {
       const statusResult = await getTransactionStatus(OrderTrackingId);
-      const isCompleted = statusResult.payment_status_description?.toLowerCase() === "completed";
-      const isFailed = ["failed", "invalid", "reversed"].includes(statusResult.payment_status_description?.toLowerCase());
-      if (isCompleted || isFailed) {
+      const newStatus = resolveStatus(statusResult.payment_status_description);
+
+      if (newStatus) {
+        finalStatus = newStatus;
         await db
           .update(pesapalTransactionsTable)
           .set({
-            status: isCompleted ? "completed" : "failed",
+            status: newStatus,
             paymentMethod: statusResult.payment_method ?? null,
             statusCode: String(statusResult.status_code ?? ""),
             statusDescription: statusResult.payment_status_description ?? null,
@@ -158,22 +168,15 @@ router.get("/pesapal/callback", async (req, res) => {
       logger.error(err, "PesaPal callback status update error");
     }
   }
+
   const baseUrl = process.env.CALLBACK_BASE_URL ?? "https://pay.makamesco-tech.co.ke";
   const returnPage = OrderMerchantReference?.startsWith("NEXUS-") ? "/card-test" : "/card";
-  // Re-check status for redirect (variables scoped above in try block)
-  let finalStatus = "pending";
-  try {
-    if (OrderTrackingId) {
-      const sr = await getTransactionStatus(OrderTrackingId);
-      const desc = sr.payment_status_description?.toLowerCase() ?? "";
-      if (desc === "completed") finalStatus = "completed";
-      else if (["failed", "invalid", "reversed"].includes(desc)) finalStatus = "failed";
-    }
-  } catch { /* ignore, use pending */ }
   res.redirect(`${baseUrl}${returnPage}?status=${finalStatus}&tracking=${encodeURIComponent(OrderTrackingId ?? "")}&ref=${encodeURIComponent(OrderMerchantReference ?? "")}`);
 });
 
 // GET /payments/pesapal/status/:orderTrackingId — check status (API key auth)
+// When status is still "pending" the endpoint checks PesaPal directly for a fresh result,
+// so this always returns the most up-to-date status without waiting for an IPN.
 router.get("/payments/pesapal/status/:orderTrackingId", requireApiKey, async (req: ApiKeyRequest, res) => {
   const { orderTrackingId } = req.params;
   const txs = await db
@@ -185,15 +188,42 @@ router.get("/payments/pesapal/status/:orderTrackingId", requireApiKey, async (re
     res.status(404).json({ error: "NOT_FOUND", message: "Transaction not found" });
     return;
   }
-  const tx = txs[0];
+  let tx = txs[0];
   if (tx.userId !== req.apiKeyUserId) {
     res.status(403).json({ error: "FORBIDDEN" });
     return;
   }
+
+  // If still pending, call PesaPal directly for the freshest status
+  if (tx.status === "pending") {
+    try {
+      const fresh = await getTransactionStatus(orderTrackingId);
+      const newStatus = resolveStatus(fresh.payment_status_description);
+
+      if (newStatus) {
+        const [updated] = await db
+          .update(pesapalTransactionsTable)
+          .set({
+            status: newStatus,
+            paymentMethod: fresh.payment_method ?? null,
+            statusCode: String(fresh.status_code ?? ""),
+            statusDescription: fresh.payment_status_description ?? null,
+            callbackMetadata: JSON.stringify(fresh),
+          })
+          .where(eq(pesapalTransactionsTable.id, tx.id))
+          .returning();
+        if (updated) tx = updated;
+      }
+    } catch (err) {
+      logger.warn({ err }, "PesaPal live status check failed, returning cached status");
+    }
+  }
+
   res.json({
     orderTrackingId: tx.orderTrackingId,
     merchantReference: tx.orderMerchantRef,
     status: tx.status,
+    statusDescription: tx.statusDescription,
     amount: tx.amount,
     netAmount: tx.netAmount,
     platformFee: tx.platformFee,
