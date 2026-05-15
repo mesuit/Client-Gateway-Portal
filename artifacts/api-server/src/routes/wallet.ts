@@ -214,8 +214,10 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
 
   if (b2cReady) {
     const PLATFORM_FEE_RATE = 0.025;
-    const platformFee = parseFloat((requestAmount * PLATFORM_FEE_RATE).toFixed(2));
-    const netAmount   = parseFloat((requestAmount - platformFee).toFixed(2));
+    // Math.floor ensures the integer sent to M-Pesa is never rounded back up
+    // (Daraja only accepts whole numbers; Math.ceil in mpesa.ts would undo the fee otherwise)
+    const netAmount   = Math.floor(requestAmount * (1 - PLATFORM_FEE_RATE));
+    const platformFee = requestAmount - netAmount;
 
     const baseUrl = getCallbackBaseUrl(req);
     const resultUrl  = `${baseUrl}/api/payments/b2c/result`;
