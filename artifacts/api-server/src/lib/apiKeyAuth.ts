@@ -18,7 +18,7 @@ export async function requireApiKey(req: ApiKeyRequest, res: Response, next: Nex
   }
 
   const rows = await db
-    .select({ userId: apiKeysTable.userId, keyId: apiKeysTable.id })
+    .select({ userId: apiKeysTable.userId, keyId: apiKeysTable.id, isSuspended: usersTable.isSuspended })
     .from(apiKeysTable)
     .innerJoin(usersTable, eq(apiKeysTable.userId, usersTable.id))
     .where(and(eq(apiKeysTable.secretKey, apiKey), eq(apiKeysTable.isActive, true), eq(usersTable.isActive, true)));
@@ -35,6 +35,11 @@ export async function requireApiKey(req: ApiKeyRequest, res: Response, next: Nex
     return;
   }
 
+  if (rows[0].isSuspended) {
+    res.status(403).json({ error: "ACCOUNT_SUSPENDED", message: "This merchant account has been suspended." });
+    return;
+  }
+
   req.apiKeyUserId = rows[0].userId;
   req.apiKeyId = rows[0].keyId;
 
@@ -46,14 +51,12 @@ export async function requireApiKey(req: ApiKeyRequest, res: Response, next: Nex
   next();
 }
 
-// Dual-auth: accepts both X-API-Key and Authorization Bearer (session token)
-// Sets req.apiKeyUserId in both cases so B2C routes work from both portal and API
 export async function requireAuthOrApiKey(req: ApiKeyRequest, res: Response, next: NextFunction): Promise<void> {
   const apiKey = req.headers["x-api-key"] as string | undefined;
 
   if (apiKey) {
     const rows = await db
-      .select({ userId: apiKeysTable.userId, keyId: apiKeysTable.id })
+      .select({ userId: apiKeysTable.userId, keyId: apiKeysTable.id, isSuspended: usersTable.isSuspended })
       .from(apiKeysTable)
       .innerJoin(usersTable, eq(apiKeysTable.userId, usersTable.id))
       .where(and(eq(apiKeysTable.secretKey, apiKey), eq(apiKeysTable.isActive, true), eq(usersTable.isActive, true)));
@@ -67,6 +70,11 @@ export async function requireAuthOrApiKey(req: ApiKeyRequest, res: Response, nex
         metadata: { keyPrefix: apiKey.slice(0, 8) + "..." },
       });
       res.status(401).json({ error: "Unauthorized", message: "Invalid or revoked API key" });
+      return;
+    }
+
+    if (rows[0].isSuspended) {
+      res.status(403).json({ error: "ACCOUNT_SUSPENDED", message: "This merchant account has been suspended." });
       return;
     }
 
@@ -87,13 +95,18 @@ export async function requireAuthOrApiKey(req: ApiKeyRequest, res: Response, nex
     const token = authHeader.slice(7);
     const now = new Date();
     const rows = await db
-      .select({ userId: sessionsTable.userId })
+      .select({ userId: sessionsTable.userId, isSuspended: usersTable.isSuspended })
       .from(sessionsTable)
       .innerJoin(usersTable, eq(sessionsTable.userId, usersTable.id))
       .where(and(eq(sessionsTable.token, token), gt(sessionsTable.expiresAt, now), eq(usersTable.isActive, true)));
 
     if (rows.length === 0) {
       res.status(401).json({ error: "Unauthorized", message: "Invalid or expired session" });
+      return;
+    }
+
+    if (rows[0].isSuspended) {
+      res.status(403).json({ error: "ACCOUNT_SUSPENDED", message: "This merchant account has been suspended." });
       return;
     }
 

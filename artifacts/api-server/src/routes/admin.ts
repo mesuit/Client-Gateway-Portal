@@ -11,11 +11,14 @@ import {
   pesapalTransactionsTable,
   activationPaymentsTable,
   saasSubscriptionsTable,
+  blockedIpsTable,
+  sessionsTable,
 } from "@workspace/db";
 import { eq, count, sql, isNull, desc, and } from "drizzle-orm";
-import { requireAuth, type AuthRequest } from "../lib/auth";
+import { requireAuth, type AuthRequest, invalidateAllUserSessions } from "../lib/auth";
 import { logSecurityEvent } from "../lib/securityLogger";
 import { invalidateMpesaSettingsCache, isB2CConfigured, initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
+import { invalidateBlockedIpCache } from "../lib/ipBlock";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -78,6 +81,9 @@ router.get("/admin/users", requireAuth, requireAdmin, async (req, res) => {
       businessName: usersTable.businessName,
       mode: usersTable.mode,
       isAdmin: usersTable.isAdmin,
+      isActive: usersTable.isActive,
+      isSuspended: usersTable.isSuspended,
+      lastLoginIp: usersTable.lastLoginIp,
       subscriptionType: usersTable.subscriptionType,
       subscriptionExpiresAt: usersTable.subscriptionExpiresAt,
       activatedAt: usersTable.activatedAt,
@@ -162,6 +168,176 @@ router.post("/admin/users/:id/activate", requireAuth, requireAdmin, async (req, 
   }).where(eq(usersTable.id, userId));
 
   res.json({ message: "User activated successfully" });
+});
+
+// POST /admin/users/:id/suspend — suspend a merchant account
+router.post("/admin/users/:id/suspend", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid user ID" }); return; }
+
+  const [user] = await db.select({ email: usersTable.email, isAdmin: usersTable.isAdmin })
+    .from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) { res.status(404).json({ error: "NOT_FOUND", message: "User not found" }); return; }
+  if (user.isAdmin) { res.status(400).json({ error: "FORBIDDEN", message: "Cannot suspend an admin account" }); return; }
+
+  await db.update(usersTable).set({ isSuspended: true }).where(eq(usersTable.id, userId));
+  await db.delete(sessionsTable).where(eq(sessionsTable.userId, userId));
+  invalidateAllUserSessions(userId);
+
+  logSecurityEvent({
+    eventType: "account_suspended",
+    severity: "high",
+    description: `Admin suspended account: ${user.email}`,
+    req,
+    userId: req.userId,
+  });
+
+  logger.info({ targetUserId: userId, adminId: req.userId }, "Account suspended by admin");
+  res.json({ message: `Account ${user.email} has been suspended` });
+});
+
+// POST /admin/users/:id/unsuspend — lift suspension
+router.post("/admin/users/:id/unsuspend", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) { res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid user ID" }); return; }
+
+  const [user] = await db.select({ email: usersTable.email }).from(usersTable).where(eq(usersTable.id, userId));
+  if (!user) { res.status(404).json({ error: "NOT_FOUND", message: "User not found" }); return; }
+
+  await db.update(usersTable).set({ isSuspended: false }).where(eq(usersTable.id, userId));
+  logger.info({ targetUserId: userId, adminId: req.userId }, "Account unsuspended by admin");
+  res.json({ message: `Account ${user.email} has been unsuspended` });
+});
+
+// ─── Blocked IPs ──────────────────────────────────────────────────────────────
+
+// GET /admin/blocked-ips
+router.get("/admin/blocked-ips", requireAuth, requireAdmin, async (req, res) => {
+  const rows = await db.select().from(blockedIpsTable).orderBy(desc(blockedIpsTable.createdAt));
+  res.json(rows);
+});
+
+// POST /admin/blocked-ips — add an IP block
+router.post("/admin/blocked-ips", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const { ip, reason } = req.body;
+  if (!ip) { res.status(400).json({ error: "VALIDATION_ERROR", message: "ip is required" }); return; }
+
+  const trimmed = String(ip).trim();
+  if (!/^[\d.:a-fA-F/]+$/.test(trimmed)) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "Invalid IP format" }); return;
+  }
+
+  const [record] = await db.insert(blockedIpsTable).values({
+    ip: trimmed,
+    reason: reason || null,
+    blockedBy: req.userId!,
+  }).onConflictDoUpdate({
+    target: blockedIpsTable.ip,
+    set: { reason: reason || null, blockedBy: req.userId!, createdAt: new Date() },
+  }).returning();
+
+  invalidateBlockedIpCache();
+  logSecurityEvent({
+    eventType: "ip_blocked",
+    severity: "high",
+    description: `Admin blocked IP: ${trimmed}${reason ? ` — ${reason}` : ""}`,
+    req,
+    userId: req.userId,
+    metadata: { blockedIp: trimmed },
+  });
+  logger.info({ blockedIp: trimmed, adminId: req.userId }, "IP blocked by admin");
+  res.status(201).json({ message: `IP ${trimmed} has been blocked`, record });
+});
+
+// DELETE /admin/blocked-ips/:ip — remove an IP block
+router.delete("/admin/blocked-ips/:ip", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const ip = decodeURIComponent(req.params.ip);
+  const rows = await db.delete(blockedIpsTable).where(eq(blockedIpsTable.ip, ip)).returning();
+  if (rows.length === 0) { res.status(404).json({ error: "NOT_FOUND", message: "IP not in blocklist" }); return; }
+  invalidateBlockedIpCache();
+  logger.info({ unblockedIp: ip, adminId: req.userId }, "IP unblocked by admin");
+  res.json({ message: `IP ${ip} has been unblocked` });
+});
+
+// ─── M-Pesa Reversal ──────────────────────────────────────────────────────────
+
+// POST /admin/reversal — initiate a Daraja reversal for a completed transaction
+router.post("/admin/reversal", requireAuth, requireAdmin, async (req: AuthRequest, res) => {
+  const { transactionId, amount, remarks } = req.body;
+  if (!transactionId || !amount) {
+    res.status(400).json({ error: "VALIDATION_ERROR", message: "transactionId (M-Pesa receipt) and amount are required" });
+    return;
+  }
+
+  const baseUrl = getCallbackBaseUrl(req);
+  const mpesaBase = process.env.MPESA_BASE_URL ?? "https://sandbox.safaricom.co.ke";
+  const shortcode = process.env.MPESA_SHORTCODE ?? "4565915";
+
+  // Read initiator creds from DB settings first, then env fallback
+  const settingsRows = await db.select().from(systemSettingsTable)
+    .where(sql`key IN ('mpesa_initiator_name', 'mpesa_security_credential', 'mpesa_consumer_key', 'mpesa_consumer_secret')`);
+  const settings: Record<string, string> = {};
+  for (const r of settingsRows) if (r.value) settings[r.key] = r.value;
+
+  const initiatorName = settings["mpesa_initiator_name"] ?? process.env.MPESA_INITIATOR_NAME ?? "";
+  const securityCredential = settings["mpesa_security_credential"] ?? process.env.MPESA_SECURITY_CREDENTIAL ?? "";
+  const consumerKey = settings["mpesa_consumer_key"] ?? process.env.MPESA_CONSUMER_KEY ?? "";
+  const consumerSecret = settings["mpesa_consumer_secret"] ?? process.env.MPESA_CONSUMER_SECRET ?? "";
+
+  if (!initiatorName || !securityCredential) {
+    res.status(400).json({ error: "CONFIG_ERROR", message: "Initiator name and security credential must be configured in Admin > Settings" });
+    return;
+  }
+
+  if (!consumerKey || !consumerSecret) {
+    res.status(400).json({ error: "CONFIG_ERROR", message: "M-Pesa consumer key/secret not configured" });
+    return;
+  }
+
+  const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+
+  try {
+    const tokenRes = await fetch(`${mpesaBase}/oauth/v1/generate?grant_type=client_credentials`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    const tokenData = await tokenRes.json() as { access_token?: string };
+    if (!tokenData.access_token) throw new Error("Failed to get OAuth token from Daraja");
+
+    const body = {
+      Initiator: initiatorName,
+      SecurityCredential: securityCredential,
+      CommandID: "TransactionReversal",
+      TransactionID: transactionId,
+      Amount: Number(amount),
+      ReceiverParty: shortcode,
+      RecieverIdentifierType: "11",
+      Remarks: remarks || "Admin reversal",
+      QueueTimeOutURL: `${baseUrl}/api/payments/reversal/timeout`,
+      ResultURL: `${baseUrl}/api/payments/reversal/result`,
+      Occasion: "",
+    };
+
+    const reversalRes = await fetch(`${mpesaBase}/mpesa/reversal/v1/request`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tokenData.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const result = await reversalRes.json() as Record<string, unknown>;
+    logSecurityEvent({
+      eventType: "mpesa_reversal_initiated",
+      severity: "high",
+      description: `Admin initiated M-Pesa reversal for ${transactionId} — KES ${amount}`,
+      req,
+      userId: req.userId,
+      metadata: { transactionId, amount, result },
+    });
+    logger.info({ transactionId, amount, result, adminId: req.userId }, "M-Pesa reversal initiated");
+    res.json({ message: "Reversal request sent to Safaricom", result });
+  } catch (err) {
+    logger.error(err, "M-Pesa reversal failed");
+    res.status(502).json({ error: "MPESA_ERROR", message: err instanceof Error ? err.message : "Reversal request failed" });
+  }
 });
 
 // GET /admin/withdrawals

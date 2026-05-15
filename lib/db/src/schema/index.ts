@@ -14,4 +14,5 @@ export * from "./saas_subscriptions";
 export * from "./saas_tenants";
 export * from "./system_settings";
 export * from "./security_events";
+export * from "./blocked_ips";
 export * from "./webhooks";

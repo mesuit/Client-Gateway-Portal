@@ -10,7 +10,8 @@ import {
   Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp,
   ShieldCheck, BarChart3, Wallet, Settings, Shield, Eye, EyeOff,
   AlertTriangle, RefreshCw, Trash2, Save, KeyRound, Radio,
-  Search, Activity, Zap, TrendingUp, ArrowUpCircle,
+  Search, Activity, Zap, TrendingUp, ArrowUpCircle, Ban, UserX, UserCheck,
+  Globe, RotateCcw, Plus,
 } from "lucide-react";
 import { format } from "date-fns";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -24,11 +25,22 @@ interface AdminUser {
   email: string;
   businessName: string;
   mode: string;
+  isActive: boolean;
+  isSuspended: boolean;
+  lastLoginIp: string | null;
   subscriptionType: string | null;
   subscriptionExpiresAt: string | null;
   sandboxTransactionsUsed: number;
   txCount: number;
   totalVolume: string;
+  createdAt: string;
+}
+
+interface BlockedIp {
+  id: number;
+  ip: string;
+  reason: string | null;
+  blockedBy: number | null;
   createdAt: string;
 }
 
@@ -706,10 +718,209 @@ function SecurityTab() {
   );
 }
 
+function BlockedIpsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [newIp, setNewIp] = useState("");
+  const [newReason, setNewReason] = useState("");
+
+  const { data: blockedIps, isLoading } = useQuery<BlockedIp[]>({
+    queryKey: ["admin-blocked-ips"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/blocked-ips`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async ({ ip, reason }: { ip: string; reason: string }) => {
+      const r = await fetch(`${API_BASE}/api/admin/blocked-ips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ ip, reason }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "IP blocked" });
+      setNewIp("");
+      setNewReason("");
+      qc.invalidateQueries({ queryKey: ["admin-blocked-ips"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (ip: string) => {
+      const r = await fetch(`${API_BASE}/api/admin/blocked-ips/${encodeURIComponent(ip)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "IP unblocked" });
+      qc.invalidateQueries({ queryKey: ["admin-blocked-ips"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-orange-200 bg-orange-50">
+        <CardContent className="pt-4">
+          <h3 className="font-semibold text-orange-800 mb-3 flex items-center gap-2">
+            <Ban className="w-4 h-4" /> Block an IP Address
+          </h3>
+          <div className="flex gap-2 flex-wrap">
+            <Input
+              className="w-48"
+              placeholder="IP address (e.g. 1.2.3.4)"
+              value={newIp}
+              onChange={e => setNewIp(e.target.value)}
+            />
+            <Input
+              className="flex-1 min-w-[180px]"
+              placeholder="Reason (optional)"
+              value={newReason}
+              onChange={e => setNewReason(e.target.value)}
+            />
+            <Button
+              className="bg-orange-600 hover:bg-orange-700 gap-1"
+              onClick={() => addMutation.mutate({ ip: newIp, reason: newReason })}
+              disabled={addMutation.isPending || !newIp.trim()}
+            >
+              {addMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Block IP
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading && <Loader2 className="animate-spin" />}
+
+      {!isLoading && (!blockedIps || blockedIps.length === 0) && (
+        <div className="text-center py-12 text-muted-foreground border rounded-xl bg-gray-50">
+          <Globe className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p>No blocked IPs</p>
+        </div>
+      )}
+
+      {blockedIps && blockedIps.length > 0 && (
+        <div className="space-y-2">
+          {blockedIps.map(b => (
+            <Card key={b.id} className="border-red-200">
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="font-mono font-semibold text-red-700">{b.ip}</div>
+                    {b.reason && <div className="text-sm text-muted-foreground">{b.reason}</div>}
+                    <div className="text-xs text-muted-foreground">{format(new Date(b.createdAt), "MMM d, yyyy h:mm a")}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 border-red-300 hover:bg-red-50 gap-1"
+                    onClick={() => removeMutation.mutate(b.ip)}
+                    disabled={removeMutation.isPending}
+                  >
+                    <XCircle className="w-3.5 h-3.5" /> Unblock
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReversalDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const [txId, setTxId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [remarks, setRemarks] = useState("");
+
+  const reversalMutation = useMutation({
+    mutationFn: async ({ transactionId, amount: amt, remarks: rem }: { transactionId: string; amount: string; remarks: string }) => {
+      const r = await fetch(`${API_BASE}/api/admin/reversal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ transactionId, amount: amt, remarks: rem }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Reversal submitted",
+        description: data.result?.ResponseDescription ?? "Safaricom is processing the reversal.",
+      });
+      setTxId("");
+      setAmount("");
+      setRemarks("");
+      onClose();
+    },
+    onError: (e: Error) => toast({ title: "Reversal failed", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={open2 => { if (!open2) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <RotateCcw className="w-5 h-5 text-orange-600" /> M-Pesa Reversal
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Reverses a completed M-Pesa STK Push transaction. Requires the M-Pesa receipt number and the exact amount.
+            The initiator must have reversal privileges on Daraja.
+          </p>
+          <div className="space-y-1.5">
+            <Label>M-Pesa Receipt Number</Label>
+            <Input value={txId} onChange={e => setTxId(e.target.value)} placeholder="e.g. SHW1234ABCD" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Amount (KES)</Label>
+            <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g. 500" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Reason</Label>
+            <Input value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="e.g. Fraudulent transaction" />
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+            Reversals are sent directly to Safaricom. Ensure the initiator security credential is configured in Settings.
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            className="bg-orange-600 hover:bg-orange-700 gap-2"
+            onClick={() => reversalMutation.mutate({ transactionId: txId, amount, remarks })}
+            disabled={reversalMutation.isPending || !txId || !amount}
+          >
+            {reversalMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            Submit Reversal
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminPanel() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"withdrawals" | "users" | "transactions" | "settings" | "security">("withdrawals");
+  const [tab, setTab] = useState<"withdrawals" | "users" | "transactions" | "settings" | "security" | "blocked-ips">("withdrawals");
+  const [reversalOpen, setReversalOpen] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
@@ -864,6 +1075,41 @@ export default function AdminPanel() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const suspendMutation = useMutation({
+    mutationFn: async ({ userId, action }: { userId: number; action: "suspend" | "unsuspend" }) => {
+      const r = await fetch(`${API_BASE}/api/admin/users/${userId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: (_, { action }) => {
+      toast({ title: action === "suspend" ? "Account suspended" : "Account unsuspended" });
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const blockIpMutation = useMutation({
+    mutationFn: async ({ ip, reason }: { ip: string; reason: string }) => {
+      const r = await fetch(`${API_BASE}/api/admin/blocked-ips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ ip, reason }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.message);
+      return json;
+    },
+    onSuccess: () => {
+      toast({ title: "IP blocked", description: "The IP has been added to the blocklist." });
+      qc.invalidateQueries({ queryKey: ["admin-blocked-ips"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const pending = withdrawals?.filter(w => w.status === "pending") ?? [];
   const processed = withdrawals?.filter(w => w.status !== "pending") ?? [];
 
@@ -871,6 +1117,7 @@ export default function AdminPanel() {
     { key: "withdrawals", label: `Withdrawals (${pending.length} pending)`, icon: null },
     { key: "users", label: "Merchants", icon: null },
     { key: "transactions", label: "Transactions", icon: <Activity className="w-3.5 h-3.5" /> },
+    { key: "blocked-ips", label: "Blocked IPs", icon: <Ban className="w-3.5 h-3.5" /> },
     { key: "settings", label: "Settings", icon: <Settings className="w-3.5 h-3.5" /> },
     { key: "security", label: "Security", icon: <Shield className="w-3.5 h-3.5" /> },
   ] as const;
@@ -1029,13 +1276,16 @@ export default function AdminPanel() {
         <div className="space-y-3">
           {uLoading && <Loader2 className="animate-spin" />}
           {users?.map(u => (
-            <Card key={u.id}>
+            <Card key={u.id} className={u.isSuspended ? "border-red-300 bg-red-50/40" : ""}>
               <CardContent className="pt-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold">{u.businessName}</span>
-                      {modeBadge(u.mode, u.subscriptionType, u.subscriptionExpiresAt)}
+                      {u.isSuspended
+                        ? <Badge variant="destructive" className="gap-1"><UserX className="w-3 h-3" />Suspended</Badge>
+                        : modeBadge(u.mode, u.subscriptionType, u.subscriptionExpiresAt)
+                      }
                     </div>
                     <div className="text-sm text-muted-foreground">{u.email}</div>
                     <div className="text-xs text-muted-foreground mt-1">
@@ -1043,15 +1293,54 @@ export default function AdminPanel() {
                       {u.mode === "sandbox" && ` · ${u.sandboxTransactionsUsed}/2 sandbox used`}
                       {u.subscriptionExpiresAt && ` · expires ${format(new Date(u.subscriptionExpiresAt), "MMM d, yyyy")}`}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {u.mode === "sandbox" ? (
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" className="text-xs" onClick={() => activateMutation.mutate({ userId: u.id, plan: "monthly" })} disabled={activateMutation.isPending}>Activate Monthly</Button>
-                        <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={() => activateMutation.mutate({ userId: u.id, plan: "yearly" })} disabled={activateMutation.isPending}>Activate Yearly</Button>
+                    {u.lastLoginIp && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <Globe className="w-3 h-3" /> Last IP: <span className="font-mono">{u.lastLoginIp}</span>
                       </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                    {!u.isSuspended ? (
+                      <>
+                        {u.mode === "sandbox" ? (
+                          <>
+                            <Button size="sm" variant="outline" className="text-xs" onClick={() => activateMutation.mutate({ userId: u.id, plan: "monthly" })} disabled={activateMutation.isPending}>Monthly</Button>
+                            <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={() => activateMutation.mutate({ userId: u.id, plan: "yearly" })} disabled={activateMutation.isPending}>Yearly</Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="outline" className="text-xs" onClick={() => revokeMutation.mutate(u.id)} disabled={revokeMutation.isPending}>Revoke</Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs text-red-600 border-red-300 hover:bg-red-50 gap-1"
+                          onClick={() => suspendMutation.mutate({ userId: u.id, action: "suspend" })}
+                          disabled={suspendMutation.isPending}
+                        >
+                          <UserX className="w-3 h-3" /> Suspend
+                        </Button>
+                      </>
                     ) : (
-                      <Button size="sm" variant="destructive" className="text-xs" onClick={() => revokeMutation.mutate(u.id)} disabled={revokeMutation.isPending}>Revoke to Sandbox</Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs text-green-600 border-green-300 hover:bg-green-50 gap-1"
+                        onClick={() => suspendMutation.mutate({ userId: u.id, action: "unsuspend" })}
+                        disabled={suspendMutation.isPending}
+                      >
+                        <UserCheck className="w-3 h-3" /> Unsuspend
+                      </Button>
+                    )}
+                    {u.lastLoginIp && !u.isSuspended && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs text-orange-600 border-orange-300 hover:bg-orange-50 gap-1"
+                        onClick={() => blockIpMutation.mutate({ ip: u.lastLoginIp!, reason: `Merchant ${u.email} blocked` })}
+                        disabled={blockIpMutation.isPending}
+                      >
+                        <Ban className="w-3 h-3" /> Block IP
+                      </Button>
                     )}
                     <button onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)} className="p-1 text-muted-foreground">
                       {expandedUser === u.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -1063,6 +1352,7 @@ export default function AdminPanel() {
                     <div>Joined: {format(new Date(u.createdAt), "MMM d, yyyy")}</div>
                     <div>Plan: {u.subscriptionType ?? "None"}</div>
                     <div>Sandbox used: {u.sandboxTransactionsUsed}/2</div>
+                    {u.lastLoginIp && <div>Last login IP: <span className="font-mono">{u.lastLoginIp}</span></div>}
                   </div>
                 )}
               </CardContent>
@@ -1071,9 +1361,26 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {tab === "transactions" && <TransactionsTab />}
+      {tab === "transactions" && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-orange-600 border-orange-300 hover:bg-orange-50 gap-1.5"
+              onClick={() => setReversalOpen(true)}
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> M-Pesa Reversal
+            </Button>
+          </div>
+          <TransactionsTab />
+        </div>
+      )}
+      {tab === "blocked-ips" && <BlockedIpsTab />}
       {tab === "settings" && <SettingsTab />}
       {tab === "security" && <SecurityTab />}
+
+      <ReversalDialog open={reversalOpen} onClose={() => setReversalOpen(false)} />
 
       {/* Profit Withdrawal Dialog */}
       <Dialog open={profitOpen} onOpenChange={open => { if (!open) setProfitOpen(false); }}>

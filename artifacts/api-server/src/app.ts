@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { checkBlockedIp } from "./lib/ipBlock";
 
 const app: Express = express();
 
@@ -28,6 +29,9 @@ app.use(
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Block requests from blocked IPs before any route handling
+app.use("/api", checkBlockedIp);
 
 app.use("/api", router);
 

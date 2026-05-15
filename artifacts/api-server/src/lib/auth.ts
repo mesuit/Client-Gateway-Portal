@@ -24,11 +24,12 @@ interface CachedSession {
   userId: number;
   email: string;
   businessName: string;
+  isSuspended: boolean;
   expiresAt: number;
 }
 
 const sessionCache = new Map<string, CachedSession>();
-const CACHE_TTL_MS = 60 * 1000; // cache each token for 60 seconds
+const CACHE_TTL_MS = 60 * 1000;
 
 function getCached(token: string): CachedSession | null {
   const entry = sessionCache.get(token);
@@ -44,9 +45,15 @@ export function invalidateSessionCache(token: string): void {
   sessionCache.delete(token);
 }
 
+export function invalidateAllUserSessions(userId: number): void {
+  for (const [token, session] of sessionCache.entries()) {
+    if (session.userId === userId) sessionCache.delete(token);
+  }
+}
+
 export async function createSession(userId: number): Promise<string> {
   const token = generateToken();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await db.insert(sessionsTable).values({ userId, token, expiresAt });
   return token;
 }
@@ -68,6 +75,10 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
   const cached = getCached(token);
   if (cached) {
+    if (cached.isSuspended) {
+      res.status(403).json({ error: "ACCOUNT_SUSPENDED", message: "Your account has been suspended. Contact support." });
+      return;
+    }
     req.userId = cached.userId;
     req.userEmail = cached.email;
     req.businessName = cached.businessName;
@@ -77,7 +88,12 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
   const now = new Date();
   const rows = await db
-    .select({ userId: sessionsTable.userId, email: usersTable.email, businessName: usersTable.businessName })
+    .select({
+      userId: sessionsTable.userId,
+      email: usersTable.email,
+      businessName: usersTable.businessName,
+      isSuspended: usersTable.isSuspended,
+    })
     .from(sessionsTable)
     .innerJoin(usersTable, eq(sessionsTable.userId, usersTable.id))
     .where(and(eq(sessionsTable.token, token), gt(sessionsTable.expiresAt, now)));
@@ -87,10 +103,16 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     return;
   }
 
+  if (rows[0].isSuspended) {
+    res.status(403).json({ error: "ACCOUNT_SUSPENDED", message: "Your account has been suspended. Contact support." });
+    return;
+  }
+
   sessionCache.set(token, {
     userId: rows[0].userId,
     email: rows[0].email,
     businessName: rows[0].businessName,
+    isSuspended: rows[0].isSuspended,
     expiresAt: Date.now() + CACHE_TTL_MS,
   });
 

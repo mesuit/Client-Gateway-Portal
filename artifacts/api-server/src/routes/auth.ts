@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable, sessionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, createSession, requireAuth, invalidateSessionCache, type AuthRequest } from "../lib/auth";
+import { getRequestIp } from "../lib/ipBlock";
 import { logSecurityEvent } from "../lib/securityLogger";
 
 const router = Router();
@@ -109,6 +110,22 @@ router.post("/auth/login", async (req, res) => {
     res.status(403).json({ error: "ACCOUNT_DISABLED", message: "Your account has been disabled" });
     return;
   }
+
+  if (user.isSuspended) {
+    logSecurityEvent({
+      eventType: "failed_login",
+      severity: "high",
+      description: `Login attempt on suspended account: ${user.email}`,
+      req,
+      userId: user.id,
+      email: user.email,
+    });
+    res.status(403).json({ error: "ACCOUNT_SUSPENDED", message: "Your account has been suspended. Contact support." });
+    return;
+  }
+
+  const loginIp = getRequestIp(req);
+  await db.update(usersTable).set({ lastLoginIp: loginIp }).where(eq(usersTable.id, user.id));
 
   const token = await createSession(user.id);
   res.json({ token, user: safeUser(user) });

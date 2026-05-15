@@ -7,7 +7,10 @@ export type SecurityEventType =
   | "failed_login"
   | "invalid_api_key"
   | "unauthorized_admin"
-  | "suspicious_activity";
+  | "suspicious_activity"
+  | "account_suspended"
+  | "ip_blocked"
+  | "mpesa_reversal_initiated";
 
 export type SecuritySeverity = "low" | "medium" | "high" | "critical";
 
