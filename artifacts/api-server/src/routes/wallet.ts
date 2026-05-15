@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { transactionsTable, withdrawalRequestsTable, pesapalTransactionsTable } from "@workspace/db";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, isNull, sql, desc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 import { isB2CConfigured, initiateB2C, getCallbackBaseUrl } from "../lib/mpesa";
 import { logger } from "../lib/logger";
 
 const router = Router();
+
+const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 
 async function getAvailableBalance(userId: number): Promise<{ available: number; mpesaCollected: number; pesapalCollected: number; totalWithdrawn: number }> {
   const [mpesa] = await db
@@ -70,6 +72,41 @@ router.get("/wallet/withdrawals", requireAuth, async (req: AuthRequest, res) => 
   res.json(requests);
 });
 
+// GET /wallet/withdraw/cooldown — returns whether user is in the 1-hour cooldown window
+router.get("/wallet/withdraw/cooldown", requireAuth, async (req: AuthRequest, res) => {
+  const userId = req.userId!;
+
+  const [latest] = await db
+    .select({ id: withdrawalRequestsTable.id, createdAt: withdrawalRequestsTable.createdAt })
+    .from(withdrawalRequestsTable)
+    .where(and(
+      eq(withdrawalRequestsTable.userId, userId),
+      sql`${withdrawalRequestsTable.status} NOT IN ('rejected')`
+    ))
+    .orderBy(desc(withdrawalRequestsTable.createdAt))
+    .limit(1);
+
+  if (!latest) {
+    res.json({ inCooldown: false, nextAllowedAt: null, secondsRemaining: 0 });
+    return;
+  }
+
+  const elapsed = Date.now() - new Date(latest.createdAt).getTime();
+  const remaining = COOLDOWN_MS - elapsed;
+
+  if (remaining <= 0) {
+    res.json({ inCooldown: false, nextAllowedAt: null, secondsRemaining: 0 });
+    return;
+  }
+
+  const nextAllowedAt = new Date(new Date(latest.createdAt).getTime() + COOLDOWN_MS).toISOString();
+  res.json({
+    inCooldown: true,
+    nextAllowedAt,
+    secondsRemaining: Math.ceil(remaining / 1000),
+  });
+});
+
 // POST /wallet/withdraw
 router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
   const { amount, phone } = req.body;
@@ -91,14 +128,38 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
   if (formattedPhone.startsWith("0")) formattedPhone = "254" + formattedPhone.slice(1);
   if (!formattedPhone.startsWith("254")) formattedPhone = "254" + formattedPhone;
 
-  // ── STEP 1: Atomically check balance and reserve withdrawal (advisory lock) ──
+  // ── STEP 1: Atomically check balance + cooldown, then reserve withdrawal ──
   let pendingRecord: typeof withdrawalRequestsTable.$inferSelect;
   try {
     pendingRecord = await db.transaction(async (tx) => {
-      // Per-user advisory lock prevents concurrent withdrawals from the same account
+      // Per-user advisory lock prevents concurrent withdrawals
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${userId}::bigint)`);
 
-      // Re-check balance inside the lock
+      // ── Cooldown check (1 withdrawal per hour) ────────────────────────────
+      const [lastWithdrawal] = await tx
+        .select({ createdAt: withdrawalRequestsTable.createdAt })
+        .from(withdrawalRequestsTable)
+        .where(and(
+          eq(withdrawalRequestsTable.userId, userId),
+          sql`${withdrawalRequestsTable.status} NOT IN ('rejected')`
+        ))
+        .orderBy(desc(withdrawalRequestsTable.createdAt))
+        .limit(1);
+
+      if (lastWithdrawal) {
+        const elapsed = Date.now() - new Date(lastWithdrawal.createdAt).getTime();
+        if (elapsed < COOLDOWN_MS) {
+          const nextAllowedAt = new Date(new Date(lastWithdrawal.createdAt).getTime() + COOLDOWN_MS).toISOString();
+          const secondsRemaining = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+          const err = new Error(`One withdrawal per hour allowed. Next withdrawal available in ${Math.ceil(secondsRemaining / 60)} min.`);
+          (err as any).code = "RATE_LIMITED";
+          (err as any).nextAllowedAt = nextAllowedAt;
+          (err as any).secondsRemaining = secondsRemaining;
+          throw err;
+        }
+      }
+
+      // ── Balance check ─────────────────────────────────────────────────────
       const [mpesa] = await tx.select({
         balance: sql<string>`COALESCE(SUM(CASE WHEN status = 'completed' THEN amount::numeric ELSE 0 END), 0)::text`,
       }).from(transactionsTable).where(and(eq(transactionsTable.userId, userId), isNull(transactionsTable.settlementAccountId)));
@@ -132,6 +193,15 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
       return record;
     });
   } catch (err: any) {
+    if (err?.code === "RATE_LIMITED") {
+      res.status(429).json({
+        error: "RATE_LIMITED",
+        message: err.message,
+        nextAllowedAt: err.nextAllowedAt,
+        secondsRemaining: err.secondsRemaining,
+      });
+      return;
+    }
     if (err?.code === "INSUFFICIENT_BALANCE") {
       res.status(400).json({ error: "INSUFFICIENT_BALANCE", message: err.message });
       return;
@@ -186,7 +256,7 @@ router.post("/wallet/withdraw", requireAuth, async (req: AuthRequest, res) => {
     }
   }
 
-  // ── Manual fallback (no B2C creds, or B2C call failed) ───────────────────
+  // ── Manual fallback ───────────────────────────────────────────────────────
   if (b2cReady) {
     await db.update(withdrawalRequestsTable).set({
       note: "B2C auto-processing failed — queued for manual review",

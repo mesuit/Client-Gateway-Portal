@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGetDashboardStats, useListTransactions } from "@workspace/api-client-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Activity, ArrowUpRight, DollarSign, Percent, Wallet, ArrowDownToLine, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, Activity, ArrowUpRight, DollarSign, Percent, Wallet, ArrowDownToLine, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -26,11 +26,24 @@ const getStatusBadge = (status: string) => {
   }
 };
 
+function formatCountdown(seconds: number): string {
+  if (seconds <= 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 interface WalletBalance {
   totalCollected: string;
   totalWithdrawn: string;
   available: string;
   txCount: number;
+}
+
+interface CooldownStatus {
+  inCooldown: boolean;
+  nextAllowedAt: string | null;
+  secondsRemaining: number;
 }
 
 export default function Dashboard() {
@@ -39,6 +52,7 @@ export default function Dashboard() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawPhone, setWithdrawPhone] = useState("");
   const [withdrawDone, setWithdrawDone] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats();
   const { data: transactionsData, isLoading: txLoading } = useListTransactions({
@@ -54,6 +68,33 @@ export default function Dashboard() {
     },
   });
 
+  const { data: cooldown, refetch: refetchCooldown } = useQuery<CooldownStatus>({
+    queryKey: ["withdraw-cooldown"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/wallet/withdraw/cooldown`, { headers: getAuthHeaders() });
+      if (!res.ok) return { inCooldown: false, nextAllowedAt: null, secondsRemaining: 0 };
+      return res.json();
+    },
+    refetchInterval: 30_000,
+  });
+
+  // Live countdown tick
+  useEffect(() => {
+    if (!cooldown?.inCooldown) { setCountdown(0); return; }
+    setCountdown(cooldown.secondsRemaining);
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          refetchCooldown();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
   const withdrawMutation = useMutation({
     mutationFn: async (data: { amount: string; phone: string }) => {
       const res = await fetch(`${API_BASE}/api/wallet/withdraw`, {
@@ -62,14 +103,19 @@ export default function Dashboard() {
         body: JSON.stringify(data),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Withdrawal failed");
+      if (!res.ok) throw Object.assign(new Error(json.message || "Withdrawal failed"), { code: json.error, data: json });
       return json;
     },
     onSuccess: () => {
       refetchWallet();
+      refetchCooldown();
       setWithdrawDone(true);
     },
-    onError: (err: Error) => {
+    onError: (err: Error & { code?: string; data?: CooldownStatus }) => {
+      if (err.code === "RATE_LIMITED" && err.data?.secondsRemaining) {
+        refetchCooldown();
+        setWithdrawOpen(false);
+      }
       toast({ title: "Withdrawal failed", description: err.message, variant: "destructive" });
     },
   });
@@ -90,6 +136,7 @@ export default function Dashboard() {
 
   const walletAvailable = Number(wallet?.available || 0);
   const walletCollected = Number(wallet?.totalCollected || 0);
+  const inCooldown = cooldown?.inCooldown && countdown > 0;
 
   return (
     <div className="space-y-8">
@@ -145,7 +192,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Platform Wallet — shown when there are platform-collected funds (no till set) */}
+      {/* Platform Wallet */}
       {walletCollected > 0 && (
         <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
           <CardHeader className="pb-3">
@@ -159,14 +206,23 @@ export default function Dashboard() {
                   <CardDescription className="text-xs">Funds collected by Nexus Pay (no till configured)</CardDescription>
                 </div>
               </div>
-              <Button
-                onClick={() => { setWithdrawOpen(true); setWithdrawDone(false); }}
-                className="bg-green-600 hover:bg-green-700 gap-2 self-start sm:self-auto"
-                disabled={walletAvailable < 10}
-              >
-                <ArrowDownToLine className="w-4 h-4" />
-                Withdraw
-              </Button>
+              <div className="flex flex-col items-end gap-1 self-start sm:self-auto">
+                <Button
+                  onClick={() => { setWithdrawOpen(true); setWithdrawDone(false); }}
+                  className="bg-green-600 hover:bg-green-700 gap-2"
+                  disabled={walletAvailable < 10 || !!inCooldown}
+                >
+                  {inCooldown
+                    ? <><Clock className="w-4 h-4" /> {formatCountdown(countdown)}</>
+                    : <><ArrowDownToLine className="w-4 h-4" /> Withdraw</>
+                  }
+                </Button>
+                {inCooldown && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Next withdrawal in {formatCountdown(countdown)}
+                  </p>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -182,16 +238,21 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-            {walletAvailable < 10 && (
+            {walletAvailable < 10 && !inCooldown && (
               <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" /> Minimum withdrawal is KES 10
+              </p>
+            )}
+            {inCooldown && cooldown?.nextAllowedAt && (
+              <p className="text-xs text-amber-600 mt-3 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> One withdrawal per hour. Available again at {format(new Date(cooldown.nextAllowedAt), "h:mm a")}
               </p>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* No wallet hint if nothing collected on platform */}
+      {/* No wallet hint */}
       {walletCollected === 0 && wallet !== undefined && (
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-700 flex items-start gap-3">
           <Wallet className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
@@ -237,7 +298,7 @@ export default function Dashboard() {
           <DialogHeader>
             <DialogTitle>Request Withdrawal</DialogTitle>
             <DialogDescription>
-              Available: <strong>KES {walletAvailable.toLocaleString()}</strong> — funds will be sent to your M-Pesa number within 24 hours.
+              Available: <strong>KES {walletAvailable.toLocaleString()}</strong> — a 2.5% platform fee is deducted and the net amount is sent via M-Pesa B2C.
             </DialogDescription>
           </DialogHeader>
 
@@ -245,7 +306,17 @@ export default function Dashboard() {
             <div className="py-6 text-center space-y-3">
               <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto" />
               <p className="font-bold text-lg">Withdrawal Requested!</p>
-              <p className="text-sm text-muted-foreground">Your request has been received and will be processed within 24 hours to the provided M-Pesa number.</p>
+              <p className="text-sm text-muted-foreground">Your request has been received and will be processed to your M-Pesa number.</p>
+              {withdrawAmount && (
+                <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Amount:</span><span>KES {Number(withdrawAmount).toLocaleString()}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Platform fee (2.5%):</span><span className="text-red-600">- KES {(Number(withdrawAmount) * 0.025).toFixed(2)}</span></div>
+                  <div className="flex justify-between font-semibold"><span>You receive:</span><span className="text-green-600">KES {(Number(withdrawAmount) * 0.975).toFixed(2)}</span></div>
+                </div>
+              )}
+              <p className="text-xs text-amber-600 flex items-center justify-center gap-1">
+                <Clock className="w-3 h-3" /> Next withdrawal available in 1 hour
+              </p>
               <Button onClick={() => setWithdrawOpen(false)} className="w-full mt-2">Done</Button>
             </div>
           ) : (
@@ -262,6 +333,11 @@ export default function Dashboard() {
                 />
                 {withdrawAmount && Number(withdrawAmount) > walletAvailable && (
                   <p className="text-xs text-red-500">Exceeds available balance of KES {walletAvailable.toLocaleString()}</p>
+                )}
+                {withdrawAmount && Number(withdrawAmount) >= 10 && Number(withdrawAmount) <= walletAvailable && (
+                  <p className="text-xs text-muted-foreground">
+                    You receive: <strong className="text-green-600">KES {(Number(withdrawAmount) * 0.975).toFixed(2)}</strong> after 2.5% fee
+                  </p>
                 )}
               </div>
               <div className="space-y-2">
